@@ -61,21 +61,35 @@ Structural requirements:
 ## The night-off case
 
 If there was no meaningful activity (no new chats, no app opens
-beyond Dreaming itself, no installs), the entire body should be a
-single `<p>`:
+beyond Dreaming itself, no installs), do **two** things:
+
+1. Add the attribute `data-night-off="true"` to the `<article>`
+   element. The host script greps for this attribute to decide
+   whether to reset the streak counter. Without it, a paraphrased
+   "quiet day" body still counts as an active dream and the streak
+   keeps climbing — which is wrong.
+2. Make the body a single `<p>`:
 
 ```html
-<section class="dreaming-report__body">
-  <p>No activity today. Taking the night off.</p>
-</section>
+<article class="dreaming-report" data-date="YYYY-MM-DD" data-night-off="true">
+  <details class="dreaming-report__summary" open>
+    <summary>Last night's dream</summary>
+    <p>Quiet day yesterday — nothing to dream about.</p>
+  </details>
+  <section class="dreaming-report__body">
+    <p>No activity today. Taking the night off.</p>
+  </section>
+</article>
 ```
 
-The `<details>` tl;dr in this case should be one short line, e.g.
-"Quiet day yesterday — nothing to dream about."
+The tl;dr can be any short line ("Quiet day yesterday — nothing to
+dream about." is fine); the attribute is what determines the streak,
+not the prose.
 
-The user's streak counter resets when this happens. That's intended —
-the streak measures days of meaningful Möbius use, not days the
-dreamer ran.
+The user's streak counter resets when `data-night-off="true"` is
+present. That's intended — the streak measures days of meaningful
+Möbius use, not days the dreamer ran. Conversely: **never** emit
+`data-night-off="true"` on an active day, even if the day was thin.
 
 ## Output channel
 

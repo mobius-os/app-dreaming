@@ -493,8 +493,11 @@ fi
 #    Same shape as app-news: Claude -p emits the final assistant text
 #    verbatim; Codex exec --json emits JSONL whose last agent_message
 #    event holds the final text. The python extractor also detects the
-#    "night-off" variant (single <p>No activity today...) so we can
-#    reset the streak counter below.
+#    "night-off" variant so we can reset the streak counter below.
+#    Detection prefers the deterministic `data-night-off="true"`
+#    attribute on the <article> (per the system prompt). Falls back to
+#    a body-text prefix check for older outputs that pre-date the
+#    attribute contract.
 EXTRACTED_FILE="$WORK_DIR/extracted.html"
 SIGNAL_FILE="$WORK_DIR/signal.txt"
 python3 - "$RAW_OUTPUT" "$EXTRACTED_FILE" "$PROVIDER" "$SIGNAL_FILE" <<'PY' 2>>"$LOG_FILE"
@@ -534,18 +537,30 @@ with open(out_path, "w", encoding="utf-8") as f:
     f.write(block)
 
 # Classify: did the dream find real signal, or is this a night-off?
-# Heuristic — the night-off variant body is a single <p>No activity
-# today...</p>. We look at the body section's text content.
-body_match = re.search(
-    r'<section\b[^>]*\bclass="dreaming-report__body"[^>]*>(.*?)</section>',
-    block, re.DOTALL,
-)
+# Preferred path is the deterministic data-night-off="true" attribute
+# on the opening <article> tag — emitted per the system prompt's
+# night-off contract. A paraphrase-tolerant model can drift the body
+# wording, but the attribute either is or isn't there.
 night_off = False
-if body_match:
-    body_text = re.sub(r"<[^>]+>", " ", body_match.group(1))
-    body_text = re.sub(r"\s+", " ", body_text).strip().lower()
-    if body_text.startswith("no activity today"):
+article_open = re.match(r'<article\b[^>]*>', block)
+if article_open:
+    open_tag = article_open.group(0)
+    if re.search(r'\bdata-night-off\s*=\s*"true"', open_tag, re.IGNORECASE):
         night_off = True
+
+# Fallback: old outputs (pre-attribute) signalled night-off by a
+# single "No activity today" paragraph. Keep this so a freshly-pulled
+# report from an earlier dreamer still resets the streak correctly.
+if not night_off:
+    body_match = re.search(
+        r'<section\b[^>]*\bclass="dreaming-report__body"[^>]*>(.*?)</section>',
+        block, re.DOTALL,
+    )
+    if body_match:
+        body_text = re.sub(r"<[^>]+>", " ", body_match.group(1))
+        body_text = re.sub(r"\s+", " ", body_text).strip().lower()
+        if body_text.startswith("no activity today"):
+            night_off = True
 
 with open(signal_path, "w", encoding="utf-8") as f:
     f.write("night-off" if night_off else "active")
