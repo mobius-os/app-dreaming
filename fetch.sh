@@ -80,6 +80,26 @@ if [ "$TOPICS_CODE" != "200" ]; then
   exit 1
 fi
 
+# Pull the user's verbosity setting (terse | standard | chatty).
+# Missing/404 → standard. The Settings tab writes this; we inject it
+# into the prompt so the dreamer actually respects the user's pick.
+VERBOSITY_FILE="$WORK_DIR/verbosity.json"
+VERB_CODE=$(curl -sS -o "$VERBOSITY_FILE" -w "%{http_code}" \
+  -H "Authorization: Bearer $SERVICE_TOKEN" \
+  "$API_BASE_URL/api/storage/apps/$APP_ID/verbosity.json") || VERB_CODE=000
+
+VERBOSITY=$(python3 -c "
+import json, sys
+try:
+    obj = json.load(open('$VERBOSITY_FILE'))
+    level = obj.get('level') if isinstance(obj, dict) else None
+    print(level if level in ('terse', 'standard', 'chatty') else 'standard')
+except Exception:
+    print('standard')
+" 2>/dev/null)
+[ -z "$VERBOSITY" ] && VERBOSITY=standard
+log "verbosity=$VERBOSITY (http=$VERB_CODE)"
+
 # 2. Pull yesterday's activity log. The endpoint is service-token-only.
 #    A 404 is treated as "feature not yet wired" — we proceed with
 #    chat-only signal and an empty activity section.
@@ -207,12 +227,13 @@ log "Pulled $PRIOR_COUNT prior report(s)"
 #    text (HTML tags stripped) under bounded length.
 PROMPT_FILE="$WORK_DIR/prompt.md"
 python3 - "$SYSTEM_FILE" "$TOPICS_FILE" "$ACTIVITY_FILE" "$CHATS_DIR" \
-        "$PRIOR_DIR" "$YESTERDAY" "$ACTIVITY_NOTE" "$PROMPT_FILE" <<'PY' 2>>"$LOG_FILE"
+        "$PRIOR_DIR" "$YESTERDAY" "$ACTIVITY_NOTE" "$PROMPT_FILE" \
+        "$VERBOSITY" <<'PY' 2>>"$LOG_FILE"
 import json, os, re, sys
 from html.parser import HTMLParser
 
 (sys_path, topics_path, activity_path, chats_dir, prior_dir,
- yesterday, activity_note, out_path) = sys.argv[1:9]
+ yesterday, activity_note, out_path, verbosity) = sys.argv[1:10]
 
 def read(p):
     try:
@@ -320,7 +341,19 @@ if os.path.isdir(prior_dir):
 
 prior_section = "\n\n".join(prior_blocks) if prior_blocks else "(no prior dreams in the last 7 days)"
 
+verbosity_guidance = {
+    'terse': 'The user picked verbosity=terse. Keep the report under 250 words; prefer crisp single-sentence paragraphs; drop the "today you might want to" section if there is nothing concrete to suggest.',
+    'standard': 'The user picked verbosity=standard. Target the ~300-500 word range described in the system prompt.',
+    'chatty': 'The user picked verbosity=chatty. Lean toward the upper end of the system prompt\'s 300-500 word range and feel free to add a second observation if the day warranted it; still no wall-of-text.',
+}.get(verbosity, 'The user picked verbosity=standard.')
+
 composed = f"""{sys_text}
+
+---
+
+## Verbosity
+
+{verbosity_guidance}
 
 ---
 
