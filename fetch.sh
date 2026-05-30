@@ -718,19 +718,27 @@ if [ -z "$TLDR" ]; then
 fi
 
 # 13. Notify.
-NOTIF_BODY=$(python3 -c "
-import json, sys
+# Pass TLDR + APP_ID through the environment rather than splicing
+# them into the python literal. The TLDR text comes from the agent's
+# HTML — a tl;dr containing a triple-quote, a backslash, or a `"""`
+# would otherwise break the json.dumps call (or in the worst case
+# inject syntax). Env vars sidestep that entirely.
+NOTIF_BODY=$(TLDR="$TLDR" APP_ID="$APP_ID" python3 <<'PY'
+import json, os
+tldr = os.environ.get("TLDR", "").strip()
+app_id = os.environ.get("APP_ID", "")
 print(json.dumps({
-    'title': \"Today's dream is ready\",
-    'body': '''$TLDR'''.strip(),
-    'source_type': 'app',
-    'source_id': '$APP_ID',
-    'target': '/app/$APP_ID',
-    'actions': [
-        {'action': 'open_app', 'title': 'Read', 'target': '/app/$APP_ID'}
+    "title": "Today's dream is ready",
+    "body": tldr,
+    "source_type": "app",
+    "source_id": app_id,
+    "target": f"/app/{app_id}",
+    "actions": [
+        {"action": "open_app", "title": "Read", "target": f"/app/{app_id}"}
     ],
 }))
-")
+PY
+)
 curl -sS -X POST "$API_BASE_URL/api/notifications/send" \
   -H "Authorization: Bearer $SERVICE_TOKEN" \
   -H "Content-Type: application/json" \
