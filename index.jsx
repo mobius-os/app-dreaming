@@ -637,7 +637,7 @@ function ReportCard({ dateStr, storage, defaultOpen }) {
   )
 }
 
-function ReportsTab({ appId, storage }) {
+function ReportsTab({ appId, token, storage }) {
   const [dates, setDates] = useState([])
   const [loading, setLoading] = useState(true)
   const [schedule, setSchedule] = useState(null)
@@ -673,7 +673,7 @@ function ReportsTab({ appId, storage }) {
     try {
       const r = await fetch(`/api/apps/${appId}/run-job`, {
         method: 'POST',
-        headers: { Authorization: `Bearer ${storage._token ?? ''}` },
+        headers: { Authorization: `Bearer ${token}` },
       })
       if (!r.ok) {
         setStatusMsg('')
@@ -709,7 +709,7 @@ function ReportsTab({ appId, storage }) {
         setErrorMsg('Dream taking longer than expected. Check back soon.')
       }
     }, 5000)
-  }, [appId, dates, storage])
+  }, [appId, token, dates, storage])
 
   if (loading) return <div style={S.loading}>Loading dreams…</div>
 
@@ -1168,16 +1168,10 @@ export default function App({ appId, token }) {
   // instance is shared between Reports and Settings so a future
   // window.mobius.storage cache (when the offline runtime lands)
   // doesn't get round-tripped twice.
-  const storage = useMemo(() => {
-    const s = makeStorage(appId, token)
-    // The Reports tab's "Run now" path uses the raw token to POST
-    // /api/apps/<id>/run-job (not a storage endpoint), so we stash
-    // it on the adapter rather than threading another prop. Underscore
-    // prefix flags this as an implementation detail, not part of the
-    // storage contract callers should reach for.
-    s._token = token
-    return s
-  }, [appId, token])
+  const storage = useMemo(
+    () => makeStorage(appId, token),
+    [appId, token],
+  )
 
   // Load streak on mount + refresh when the user re-enters the tab
   // (cheap, and the cron may have updated it in the background).
@@ -1224,7 +1218,7 @@ export default function App({ appId, token }) {
       <div style={S.divider} />
       <div style={S.scroll}>
         {tab === 'reports'
-          ? <ReportsTab appId={appId} storage={storage} />
+          ? <ReportsTab appId={appId} token={token} storage={storage} />
           : <SettingsTab appId={appId} token={token} storage={storage} streak={streak} />}
       </div>
     </div>
