@@ -730,12 +730,13 @@ function ReportsTab({ appId, token, storage }) {
       {dates.length === 0 ? (
         <div style={S.empty}>
           {(() => {
-            if (!schedule) {
-              return 'Your first dream will land here after tonight. Press “Run dreamer now” to generate one immediately.'
-            }
-            const hour = schedule.hour ?? 6
-            const minute = schedule.minute ?? 0
-            const useLocalTz = !!schedule.timezone
+            // First install: no saved schedule yet. Settings defaults
+            // to 06:00 local-time, so anchor the empty-state preview
+            // there too (rather than the previous vague "after
+            // tonight" copy that ignored the actual default).
+            const hour = schedule?.hour ?? 6
+            const minute = schedule?.minute ?? 0
+            const useLocalTz = schedule ? !!schedule.timezone : true
             const next = nextRunDate(hour, minute, useLocalTz)
             const clock = formatLocalClock(next)
             return `Your first dream will land here at ${clock}. Press “Run dreamer now” to generate one immediately.`
