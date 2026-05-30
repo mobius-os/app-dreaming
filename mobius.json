@@ -1,0 +1,37 @@
+{
+  "id": "dreaming",
+  "name": "Dreaming",
+  "version": "1.0.0",
+  "description": "A nightly agent reads what happened across your Möbius yesterday and writes a one-page morning report. Streak counter resets when you take a night off.",
+  "author": "mobius-os",
+  "license": "MIT",
+  "homepage": "https://github.com/mobius-os/app-dreaming",
+  "entry": "index.jsx",
+  "offline_capable": true,
+  "permissions": {
+    "cross_app_access": "read",
+    "share_with_apps": "none"
+  },
+  "storage_seeds": {
+    "system-prompt.md": "system-prompt.md",
+    "topics.txt": "topics.txt",
+    "schedule.json": {
+      "hour": 6,
+      "minute": 0,
+      "timezone": null
+    },
+    "agent.json": {
+      "provider": "claude",
+      "model": "claude-opus-4-7"
+    }
+  },
+  "schedule": {
+    "default": "0 6 * * *",
+    "user_configurable": true,
+    "job": "fetch.sh"
+  },
+  "runtime": {
+    "imports": ["react", "react-dom"],
+    "esm_deps": ["dompurify"]
+  }
+}
