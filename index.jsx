@@ -197,6 +197,44 @@ const S = {
   }),
   statusHint: { fontSize: '12px', color: 'var(--muted)' },
   errorToast: { fontSize: '12px', color: 'var(--red, #ef4444)' },
+  // Inline offline banner. Sits at the top of the Reports tab when
+  // navigator.onLine is false. Subtle accent-tinted strip — loud
+  // enough to be noticed, quiet enough not to dominate the report
+  // itself. We deliberately keep the rest of the UI rendered (cached
+  // reports remain visible) rather than swapping to a full-screen
+  // disconnect splash; the brief is explicit that apps should "keep
+  // working with what they have".
+  offlineBanner: {
+    margin: '0 0 12px',
+    padding: '8px 12px',
+    borderRadius: '8px',
+    background: 'var(--accent-dim, rgba(99,102,241,0.12))',
+    border: '1px solid var(--border)',
+    color: 'var(--text)',
+    fontSize: '12.5px',
+    lineHeight: 1.45,
+    maxWidth: '720px',
+    marginLeft: 'auto', marginRight: 'auto',
+  },
+  // Sync pill in the header — surfaces outbox depth and offline state
+  // next to the streak badge. Three observable states (online + 0
+  // pending = hidden so steady state stays calm); same vocabulary as
+  // the other curated apps (countries, gym).
+  syncPill: (variant) => ({
+    display: 'inline-flex', alignItems: 'center', gap: '6px',
+    padding: '3px 9px', borderRadius: '999px',
+    fontSize: '11.5px', fontWeight: 600, lineHeight: 1.2,
+    whiteSpace: 'nowrap',
+    background: variant === 'offline'
+      ? 'var(--surface)'
+      : 'var(--accent-dim, rgba(99,102,241,0.12))',
+    color: variant === 'offline' ? 'var(--muted)' : 'var(--accent)',
+    border: `1px solid ${variant === 'offline' ? 'var(--border)' : 'var(--accent)'}`,
+  }),
+  syncDot: (variant) => ({
+    width: '6px', height: '6px', borderRadius: '999px',
+    background: variant === 'offline' ? 'var(--muted)' : 'var(--accent)',
+  }),
 
   // Settings
   settingsWrap: { maxWidth: '720px', margin: '0 auto' },
@@ -523,7 +561,26 @@ function makeStorage(appId, token) {
     })
   }
 
-  return { getJSON, getText, headExists, putJSON, putText }
+  // Outbox depth — the runtime queues PUT/DELETE when offline (or
+  // when the network fetch fails) and exposes a count via
+  // pendingCount(). Returns 0 when there's no runtime (fallback path
+  // writes go straight to the server, so there's no queue to surface)
+  // and on any unexpected error so the UI never blanks on a probe.
+  // Mirrors the helper in app-countries / app-gym.
+  async function pendingCount() {
+    if (ms?.pendingCount) {
+      try { return await ms.pendingCount() } catch { return 0 }
+    }
+    return 0
+  }
+
+  // Whether the offline runtime injected the shim. The pill, banner,
+  // and outbox indicator only make sense when the runtime is present;
+  // in the fallback (dev / older shell) writes go direct, so we hide
+  // those affordances rather than promise queueing we can't honour.
+  const hasRuntime = !!ms
+
+  return { getJSON, getText, headExists, putJSON, putText, pendingCount, hasRuntime }
 }
 
 // Plain JSON GET against an arbitrary endpoint (used for the provider
@@ -536,6 +593,185 @@ async function fetchJSON(url, token) {
   } catch {
     return { ok: false, status: 0 }
   }
+}
+
+// --------------------------------------------------------------------
+// Offline cache for the reports listing + recently-viewed bodies.
+//
+// The runtime's `window.mobius.storage.get` deliberately doesn't ship
+// a read-cache (it returns null offline). Dreaming is read-only from
+// the client's perspective — only the nightly cron writes reports —
+// so an offline reload would otherwise blank the Reports tab even
+// though the user read last night's dream half an hour ago. We
+// persist a tiny snapshot in localStorage keyed by app id: the list
+// of recent dates, the HTML bodies for the most recent N, and the
+// streak object so the header badge survives an offline reload too.
+//
+// This is NOT a parallel write store. Only cron-produced server state
+// flows through it; the server stays the source of truth. The cache
+// exists purely so the first paint after an offline reload shows the
+// same content the user saw before they lost connectivity. Mirrors
+// the cache shape app-news uses for the same reason.
+// --------------------------------------------------------------------
+const RECENT_REPORT_LIMIT = 7
+const CACHE_VERSION = 1
+
+function cacheKey(appId) {
+  return `dreaming:${appId}:reports-cache:v${CACHE_VERSION}`
+}
+
+function readCache(appId) {
+  try {
+    const raw = localStorage.getItem(cacheKey(appId))
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    const dates = Array.isArray(parsed.dates)
+      ? parsed.dates.filter((d) => typeof d === 'string')
+      : []
+    const reports = (parsed.reports && typeof parsed.reports === 'object')
+      ? parsed.reports : {}
+    const streak = (parsed.streak && typeof parsed.streak === 'object')
+      ? parsed.streak : null
+    return { dates, reports, streak }
+  } catch {
+    return null
+  }
+}
+
+function writeCache(appId, { dates, reports, streak }) {
+  try {
+    // Trim bodies to the most recent N dates — each report is
+    // ~10-30KB of HTML and we don't want to blow the 5MB localStorage
+    // budget on a long-tail of old dreams. The dates list itself can
+    // stay longer because it's just date strings.
+    const trimmed = {}
+    if (reports) {
+      for (const d of (dates || []).slice(0, RECENT_REPORT_LIMIT)) {
+        if (reports[d]) trimmed[d] = reports[d]
+      }
+    }
+    localStorage.setItem(
+      cacheKey(appId),
+      JSON.stringify({
+        dates: dates || [],
+        reports: trimmed,
+        streak: streak || null,
+      }),
+    )
+  } catch {
+    // Quota errors / disabled storage / private-mode Safari: skip
+    // silently. The in-memory state still works for this session.
+  }
+}
+
+// --------------------------------------------------------------------
+// Online/offline detection. Listens to the runtime's signal if
+// present, falls back to navigator.onLine + window 'online'/'offline'
+// events. Same hook shape as app-news; both apps need exactly the
+// same semantics so a future change ports cleanly.
+// --------------------------------------------------------------------
+function useOnline() {
+  const initial = (() => {
+    if (typeof window === 'undefined') return true
+    if (typeof window.mobius?.online === 'boolean') return window.mobius.online
+    return navigator.onLine !== false
+  })()
+  const [online, setOnline] = useState(initial)
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    const onUp = () => setOnline(true)
+    const onDown = () => setOnline(false)
+    window.addEventListener('online', onUp)
+    window.addEventListener('offline', onDown)
+    let mobiusUnsub = null
+    if (window.mobius && typeof window.mobius.onChange === 'function') {
+      mobiusUnsub = window.mobius.onChange((s) => {
+        if (typeof s?.online === 'boolean') setOnline(s.online)
+      })
+    }
+    return () => {
+      window.removeEventListener('online', onUp)
+      window.removeEventListener('offline', onDown)
+      if (mobiusUnsub) mobiusUnsub()
+    }
+  }, [])
+  return online
+}
+
+// --------------------------------------------------------------------
+// Outbox depth tracking. Polls pendingCount() on a slow interval and
+// also exposes a `bump()` callers can call after a write resolves so
+// the pill reflects the queue immediately, not on the next 10s tick.
+// Mirrors the shape app-countries uses for its sync pill.
+// --------------------------------------------------------------------
+function usePendingCount(storage) {
+  const [pending, setPending] = useState(0)
+  const refresh = useCallback(() => {
+    storage.pendingCount().then(setPending).catch(() => {})
+  }, [storage])
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined
+    refresh()
+    const onChange = () => refresh()
+    window.addEventListener('online', onChange)
+    window.addEventListener('offline', onChange)
+    // The runtime also drains on focus/visibility/pageshow — none of
+    // which fire 'online' — so a slow poll catches those silent
+    // drains without us subscribing to events the platform doesn't
+    // expose.
+    const id = setInterval(refresh, 10000)
+    return () => {
+      window.removeEventListener('online', onChange)
+      window.removeEventListener('offline', onChange)
+      clearInterval(id)
+    }
+  }, [refresh])
+  return { pending, bump: refresh }
+}
+
+// Sync pill — surfaces outbox depth + offline state next to the
+// streak badge. Three observable states, in priority order:
+//   pending > 0  → "Saving · N pending" / "Offline · N pending"
+//   offline      → "Offline"
+//   online + 0   → null (steady-state hides the pill so we don't
+//                  clutter the header with "Saved" forever)
+// hasRuntime=false means the runtime didn't load (fallback / older
+// shell) — writes go direct, no outbox to surface, hide the pill
+// rather than lie about queueing.
+function SyncPill({ online, pending, hasRuntime }) {
+  if (!hasRuntime) return null
+  if (pending > 0) {
+    const variant = online ? 'pending' : 'offline'
+    const label = online
+      ? `Saving · ${pending} pending`
+      : `Offline · ${pending} pending`
+    return (
+      <span
+        style={S.syncPill(variant)}
+        role="status"
+        aria-live="polite"
+        title="Your changes are saved locally and will sync when you're back online."
+      >
+        <span style={S.syncDot(variant)} aria-hidden="true" />
+        {label}
+      </span>
+    )
+  }
+  if (!online) {
+    return (
+      <span
+        style={S.syncPill('offline')}
+        role="status"
+        aria-live="polite"
+        title="You're offline — settings changes will sync when you're back online."
+      >
+        <span style={S.syncDot('offline')} aria-hidden="true" />
+        Offline
+      </span>
+    )
+  }
+  return null
 }
 
 // Probe the last 30 days for available dream dates. Same shape as
@@ -566,14 +802,24 @@ async function loadReportHtml(storage, dateStr) {
   return storage.getText(`reports/${dateStr}.html`)
 }
 
-// One card in the Reports list. Lazily loads its HTML body the first
-// time the user expands it so opening the tab is cheap even when 30
-// days of dreams are on disk.
-function ReportCard({ dateStr, storage, defaultOpen }) {
+// One card in the Reports list. Accepts a `cachedHtml` prop that, when
+// non-null, pre-populates the body so an offline reload of the most
+// recent few dreams paints immediately. Otherwise lazily loads its
+// HTML body the first time the user expands it so opening the tab is
+// cheap even when 30 days of dreams are on disk. The optional
+// `onBodyFetched(dateStr, html)` callback lets the parent persist
+// freshly-fetched bodies to the offline cache.
+function ReportCard({ dateStr, storage, defaultOpen, cachedHtml, onBodyFetched }) {
   const [open, setOpen] = useState(!!defaultOpen)
-  const [html, setHtml] = useState(null)
+  const [html, setHtml] = useState(cachedHtml ?? null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(false)
+
+  // If the parent updates the cached body (e.g. after a prefetch
+  // pass), surface it without forcing a re-fetch.
+  useEffect(() => {
+    if (cachedHtml != null && html == null) setHtml(cachedHtml)
+  }, [cachedHtml, html])
 
   useEffect(() => {
     if (!open || html !== null) return
@@ -588,11 +834,14 @@ function ReportCard({ dateStr, storage, defaultOpen }) {
         setHtml('')
       } else {
         setHtml(body)
+        // Persist through to the offline cache so the next offline
+        // reload finds this body without another network round-trip.
+        if (onBodyFetched) onBodyFetched(dateStr, body)
       }
       setLoading(false)
     })()
     return () => { cancelled = true }
-  }, [open, html, storage, dateStr])
+  }, [open, html, storage, dateStr, onBodyFetched])
 
   return (
     <div style={S.reportCard(open)}>
@@ -637,8 +886,15 @@ function ReportCard({ dateStr, storage, defaultOpen }) {
   )
 }
 
-function ReportsTab({ appId, token, storage }) {
-  const [dates, setDates] = useState([])
+function ReportsTab({ appId, token, storage, online }) {
+  // Seed dates + cached bodies from localStorage so the first paint
+  // after an offline reload shows yesterday's dream instead of an
+  // empty state. The server probe runs in parallel and replaces this
+  // snapshot the moment it returns — we only trust the cache as a
+  // fallback for the live empty result.
+  const initialCache = useMemo(() => readCache(appId) || { dates: [], reports: {}, streak: null }, [appId])
+  const [dates, setDates] = useState(initialCache.dates)
+  const [cachedReports, setCachedReports] = useState(initialCache.reports)
   const [loading, setLoading] = useState(true)
   const [schedule, setSchedule] = useState(null)
   // generating: null = idle, {since: Date, knownDates: Set} when polling.
@@ -646,6 +902,35 @@ function ReportsTab({ appId, token, storage }) {
   const [statusMsg, setStatusMsg] = useState('')
   const [errorMsg, setErrorMsg] = useState('')
   const pollRef = useRef(null)
+  // Sync in-flight guard. setState is async so two rapid clicks could
+  // both see `generating === null` in their closures; the ref flips
+  // immediately so the second invocation bails before the network
+  // call. Mirrors the guard in app-news.
+  const generatingRef = useRef(false)
+
+  // Persist any update to (dates, cachedReports) into the offline
+  // cache. Streak is owned by the parent and merged in on its own
+  // effect — see the App component below.
+  const persistCache = useCallback((nextDates, nextReports) => {
+    writeCache(appId, {
+      dates: nextDates,
+      reports: nextReports,
+      // Preserve whatever streak the App last wrote; we only own
+      // dates+reports from here.
+      streak: (readCache(appId) || {}).streak ?? null,
+    })
+  }, [appId])
+
+  // Called by a ReportCard when its lazy fetch resolves so we can
+  // write the body through to the offline cache.
+  const handleBodyFetched = useCallback((dateStr, body) => {
+    setCachedReports((prev) => {
+      if (prev[dateStr] === body) return prev
+      const next = { ...prev, [dateStr]: body }
+      persistCache(dates, next)
+      return next
+    })
+  }, [dates, persistCache])
 
   useEffect(() => {
     let cancelled = false
@@ -655,18 +940,45 @@ function ReportsTab({ appId, token, storage }) {
         storage.getJSON('schedule.json'),
       ])
       if (cancelled) return
-      setDates(list)
+      // When the live probe came up empty (offline, or a transient
+      // server hiccup), keep the cached dates so the user still has
+      // dreams to read. Never replace a fresher server view with a
+      // stale one — same posture as app-news.
+      const effective = list.length > 0 ? list : initialCache.dates
+      setDates(effective)
       if (s) setSchedule(s)
+      // Prefetch the latest report so the default-open card paints
+      // without a per-card loading state. We only prefetch if we
+      // don't already have it cached — re-reads against the server
+      // when we have the bytes locally are wasteful.
+      if (effective.length > 0 && !initialCache.reports[effective[0]]) {
+        const body = await loadReportHtml(storage, effective[0])
+        if (cancelled) return
+        if (body) {
+          setCachedReports((prev) => {
+            const next = { ...prev, [effective[0]]: body }
+            persistCache(effective, next)
+            return next
+          })
+        }
+      } else if (list.length > 0) {
+        // Live probe succeeded — persist the fresh dates list even if
+        // we didn't refetch any bodies.
+        persistCache(effective, initialCache.reports)
+      }
       setLoading(false)
     })()
     return () => { cancelled = true }
-  }, [storage])
+  }, [storage, initialCache, persistCache])
 
   useEffect(() => () => {
     if (pollRef.current) clearInterval(pollRef.current)
   }, [])
 
   const handleGenerate = useCallback(async () => {
+    // Sync guard — see comment by generatingRef above.
+    if (generatingRef.current) return
+    generatingRef.current = true
     setErrorMsg('')
     setStatusMsg('Asking the dreamer to run now…')
     let started
@@ -678,16 +990,19 @@ function ReportsTab({ appId, token, storage }) {
       if (!r.ok) {
         setStatusMsg('')
         setErrorMsg(`Could not start job (HTTP ${r.status}).`)
+        generatingRef.current = false
         return
       }
       started = Date.now()
     } catch {
       setStatusMsg('')
       setErrorMsg('Could not reach the server.')
+      generatingRef.current = false
       return
     }
     const knownDates = new Set(dates)
     setGenerating({ since: started, knownDates })
+    if (pollRef.current) clearInterval(pollRef.current)
     pollRef.current = setInterval(async () => {
       const elapsed = Date.now() - started
       const list = await loadReportDates(storage)
@@ -696,7 +1011,9 @@ function ReportsTab({ appId, token, storage }) {
         clearInterval(pollRef.current)
         pollRef.current = null
         setDates(list)
+        persistCache(list, cachedReports)
         setGenerating(null)
+        generatingRef.current = false
         setStatusMsg('New dream ready.')
         setTimeout(() => setStatusMsg(''), 3500)
         return
@@ -705,21 +1022,35 @@ function ReportsTab({ appId, token, storage }) {
         clearInterval(pollRef.current)
         pollRef.current = null
         setGenerating(null)
+        generatingRef.current = false
         setStatusMsg('')
         setErrorMsg('Dream taking longer than expected. Check back soon.')
       }
     }, 5000)
-  }, [appId, token, dates, storage])
+  }, [appId, token, dates, storage, cachedReports, persistCache])
 
-  if (loading) return <div style={S.loading}>Loading dreams…</div>
+  if (loading && dates.length === 0) return <div style={S.loading}>Loading dreams…</div>
+
+  // "Run dreamer now" hits /api/apps/<id>/run-job — a server-side
+  // trigger with no outbox semantics — so we disable when offline
+  // rather than letting the POST fail after the click. Same posture
+  // as app-news.
+  const generateDisabled = !!generating || !online
 
   return (
     <div>
+      {!online && (
+        <div style={S.offlineBanner}>
+          Offline — showing last cached dreams. The dreamer resumes once
+          you’re back online.
+        </div>
+      )}
       <div style={S.topRow}>
         <button
-          style={S.generateBtn(!!generating)}
+          style={S.generateBtn(generateDisabled)}
           onClick={handleGenerate}
-          disabled={!!generating}
+          disabled={generateDisabled}
+          title={!online ? 'Online required to run the dreamer' : undefined}
         >
           {generating ? 'Dreaming…' : 'Run dreamer now'}
         </button>
@@ -750,6 +1081,8 @@ function ReportsTab({ appId, token, storage }) {
               dateStr={d}
               storage={storage}
               defaultOpen={i === 0}
+              cachedHtml={cachedReports[d] ?? null}
+              onBodyFetched={handleBodyFetched}
             />
           ))}
         </div>
@@ -778,7 +1111,7 @@ function buildProviderGroups(payload) {
   return groups.length > 0 ? groups : FALLBACK_GROUPS
 }
 
-function SettingsTab({ appId, token, storage, streak }) {
+function SettingsTab({ appId, token, storage, streak, online, bumpPending }) {
   const [topics, setTopics] = useState('')
   const [hour, setHour] = useState(6)
   const [minute, setMinute] = useState(0)
@@ -883,42 +1216,56 @@ function SettingsTab({ appId, token, storage, streak }) {
     return () => { cancelled = true }
   }, [storage, token])
 
+  // Every save goes through storage.put* — when offline (or the
+  // server is unreachable) the runtime queues the write in IndexedDB
+  // and flushes on reconnect. We bump the pending counter right after
+  // each call so the header pill reflects the new queue depth
+  // immediately, rather than waiting for the 10s slow-poll tick.
+  // The toast copy stays the same — the runtime treats `{queued:true}`
+  // and `{synced:true}` as the same observable outcome from the app's
+  // perspective ("your edit is safe; we'll get it there").
+
   const saveTopics = useCallback(async () => {
     await storage.putText('topics.txt', topics)
-    setTopicsToast('Saved ✓')
-    setTimeout(() => setTopicsToast(''), 2000)
-  }, [storage, topics])
+    bumpPending?.()
+    setTopicsToast(online ? 'Saved ✓' : 'Saved offline — will sync ✓')
+    setTimeout(() => setTopicsToast(''), 2400)
+  }, [storage, topics, online, bumpPending])
 
   const resetTopics = useCallback(async () => {
     setTopics(DEFAULT_TOPICS)
     await storage.putText('topics.txt', DEFAULT_TOPICS)
-    setTopicsToast('Reset to default ✓')
-    setTimeout(() => setTopicsToast(''), 2000)
-  }, [storage])
+    bumpPending?.()
+    setTopicsToast(online ? 'Reset to default ✓' : 'Reset offline — will sync ✓')
+    setTimeout(() => setTopicsToast(''), 2400)
+  }, [storage, online, bumpPending])
 
   const saveSchedule = useCallback(async () => {
     const payload = { hour, minute }
     if (useLocalTz) payload.timezone = localTz
     else payload.timezone = null
     await storage.putJSON('schedule.json', payload)
-    setScheduleToast('Saved ✓')
-    setTimeout(() => setScheduleToast(''), 2000)
-  }, [storage, hour, minute, useLocalTz, localTz])
+    bumpPending?.()
+    setScheduleToast(online ? 'Saved ✓' : 'Saved offline — will sync ✓')
+    setTimeout(() => setScheduleToast(''), 2400)
+  }, [storage, hour, minute, useLocalTz, localTz, online, bumpPending])
 
   const saveAgent = useCallback(async (nextProvider, nextModel) => {
     setProvider(nextProvider)
     setModel(nextModel)
     await storage.putJSON('agent.json', { provider: nextProvider, model: nextModel })
-    setAgentToast('Saved ✓')
-    setTimeout(() => setAgentToast(''), 2000)
-  }, [storage])
+    bumpPending?.()
+    setAgentToast(online ? 'Saved ✓' : 'Saved offline — will sync ✓')
+    setTimeout(() => setAgentToast(''), 2400)
+  }, [storage, online, bumpPending])
 
   const saveVerbosity = useCallback(async (level) => {
     setVerbosity(level)
     await storage.putJSON('verbosity.json', { level })
-    setVerbosityToast('Saved ✓')
-    setTimeout(() => setVerbosityToast(''), 2000)
-  }, [storage])
+    bumpPending?.()
+    setVerbosityToast(online ? 'Saved ✓' : 'Saved offline — will sync ✓')
+    setTimeout(() => setVerbosityToast(''), 2400)
+  }, [storage, online, bumpPending])
 
   const onTimeChange = useCallback((e) => {
     // Clearing the <input type="time"> yields "" which splits to [""].
@@ -1143,12 +1490,20 @@ function SettingsTab({ appId, token, storage, streak }) {
         </label>
 
         <div style={S.btnRow}>
+          {/* Save schedule writes through storage.put* — queues offline,
+              syncs on reconnect — so it's fine to leave enabled when
+              offline. The toast reflects the queued case explicitly. */}
           <button style={S.btn} onClick={saveSchedule}>Save schedule</button>
+          {/* Run-now hits /api/apps/<id>/run-job which is a server-side
+              trigger; no outbox semantics. Disable when offline rather
+              than letting the POST fail after the click. Same posture
+              as the Reports tab's "Run dreamer now" button. */}
           <button
-            style={runNowBusy ? S.btnSecondaryBusy : S.btnSecondary}
+            style={(runNowBusy || !online) ? S.btnSecondaryBusy : S.btnSecondary}
             onClick={handleRunNow}
-            disabled={runNowBusy}
+            disabled={runNowBusy || !online}
             aria-busy={runNowBusy}
+            title={!online ? 'Online required to run the dreamer' : undefined}
           >
             {runNowBusy ? 'Running…' : 'Run now'}
           </button>
@@ -1163,27 +1518,50 @@ function SettingsTab({ appId, token, storage, streak }) {
 
 export default function App({ appId, token }) {
   const [tab, setTab] = useState('reports')
-  const [streak, setStreak] = useState(null)
+  // Seed streak from the offline cache so the badge survives an
+  // offline reload (and the brief is explicit about this: "Keep
+  // [streak] in state too so the badge survives an offline reload").
+  // The server probe runs in parallel and replaces it the moment it
+  // returns; the cache is purely a first-paint fallback.
+  const [streak, setStreak] = useState(() => {
+    const c = readCache(appId)
+    return c?.streak ?? null
+  })
 
   // Build the storage adapter once per (appId, token) — the same
-  // instance is shared between Reports and Settings so a future
-  // window.mobius.storage cache (when the offline runtime lands)
-  // doesn't get round-tripped twice.
+  // instance is shared between Reports and Settings so we don't
+  // double-fetch / double-poll the runtime.
   const storage = useMemo(
     () => makeStorage(appId, token),
     [appId, token],
   )
 
+  const online = useOnline()
+  const { pending, bump: bumpPending } = usePendingCount(storage)
+
   // Load streak on mount + refresh when the user re-enters the tab
   // (cheap, and the cron may have updated it in the background).
+  // Persist freshly-fetched streaks into the offline cache so the
+  // next offline reload still has the live count.
   useEffect(() => {
     let cancelled = false
     ;(async () => {
       const s = await storage.getJSON('streak.json')
-      if (!cancelled) setStreak(s || { current: 0, last_active_date: null })
+      if (cancelled) return
+      const next = s || { current: 0, last_active_date: null }
+      setStreak(next)
+      // Only merge into the cache when the live probe actually
+      // returned something — a null from offline `storage.get` is the
+      // signal to *trust* the cached streak, not overwrite it with a
+      // zero. The same guard prevents a stale 0 from masking a real
+      // streak after a flaky-network reload.
+      if (s) {
+        const cur = readCache(appId) || { dates: [], reports: {}, streak: null }
+        writeCache(appId, { ...cur, streak: next })
+      }
     })()
     return () => { cancelled = true }
-  }, [storage, tab])
+  }, [storage, tab, appId])
 
   const today = todayLocalDateStr()
   const streakActive = streak && (streak.current ?? 0) > 0
@@ -1205,6 +1583,7 @@ export default function App({ appId, token }) {
           >
             {streakLabel}
           </span>
+          <SyncPill online={online} pending={pending} hasRuntime={storage.hasRuntime} />
           <span style={S.todayLabel}>{shortDate(today)}</span>
         </div>
         <div style={S.tabs}>
@@ -1219,8 +1598,15 @@ export default function App({ appId, token }) {
       <div style={S.divider} />
       <div style={S.scroll}>
         {tab === 'reports'
-          ? <ReportsTab appId={appId} token={token} storage={storage} />
-          : <SettingsTab appId={appId} token={token} storage={storage} streak={streak} />}
+          ? <ReportsTab appId={appId} token={token} storage={storage} online={online} />
+          : <SettingsTab
+              appId={appId}
+              token={token}
+              storage={storage}
+              streak={streak}
+              online={online}
+              bumpPending={bumpPending}
+            />}
       </div>
     </div>
   )

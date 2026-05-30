@@ -1,7 +1,7 @@
 {
   "id": "dreaming",
   "name": "Dreaming",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "A nightly agent reads what happened across your M\u00f6bius yesterday and writes a one-page morning report. Streak counter resets when you take a night off.",
   "author": "mobius-os",
   "license": "MIT",
