@@ -520,9 +520,12 @@ function makeStorage(appId, token) {
   }
 
   async function headExists(path) {
-    // The shim doesn't have a HEAD primitive yet; cheap GET via the
-    // shim still resolves the question (null vs value). For the
-    // direct path we use HEAD to avoid pulling the body.
+    // Prefer the runtime shim's get (it has an offline read cache);
+    // null means absent. The direct fallback is a plain GET — the
+    // storage API has no HEAD verb, so existence is 200-vs-404 on a
+    // GET (a missing file 404s); we just discard the body. (For
+    // listing many files, window.mobius.storage.list(prefix) is the
+    // right tool — this helper is a single-path existence check.)
     if (ms?.get) {
       try {
         const v = await ms.get(path)
@@ -530,7 +533,7 @@ function makeStorage(appId, token) {
       } catch { /* fall through */ }
     }
     try {
-      const r = await fetch(url(path), { method: 'HEAD', headers: authHeaders() })
+      const r = await fetch(url(path), { headers: authHeaders() })
       return r.ok
     } catch {
       return false
