@@ -196,7 +196,7 @@ const S = {
     fontSize: '13px', fontWeight: 500, whiteSpace: 'nowrap',
   }),
   statusHint: { fontSize: '12px', color: 'var(--muted)' },
-  errorToast: { fontSize: '12px', color: 'var(--red, #ef4444)' },
+  errorToast: { fontSize: '12px', color: 'var(--danger, #ef4444)' },
   // Inline offline banner. Sits at the top of the Reports tab when
   // navigator.onLine is false. Subtle accent-tinted strip — loud
   // enough to be noticed, quiet enough not to dominate the report
