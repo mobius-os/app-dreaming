@@ -732,9 +732,9 @@ print(json.dumps({
     "body": tldr,
     "source_type": "app",
     "source_id": app_id,
-    "target": f"/app/{app_id}",
+    "target": f"/shell/?app={app_id}",
     "actions": [
-        {"action": "open_app", "title": "Read", "target": f"/app/{app_id}"}
+        {"action": "open_app", "title": "Read", "target": f"/shell/?app={app_id}"}
     ],
 }))
 PY
