@@ -469,13 +469,13 @@ else
   PROMPT_BODY=$(cat "$PROMPT_FILE")
   # codex exec accepts --model <MODEL> (also -m). Append only when
   # set; otherwise codex uses the default from ~/.codex/config.toml.
-  # NOTE: Codex's tool surface is configured in ~/.codex/config.toml
-  # at the system level — we can't tighten it per-invocation the way
-  # Claude lets us. The token still isn't in the prompt so the worst
-  # a poisoned chat snippet could do is execute a shell command under
-  # the mobius user with no bearer to exfiltrate. Acceptable until
-  # Codex gains per-invocation tool gating.
-  CODEX_FLAGS=(exec --json)
+  # Per-invocation hardening: --sandbox read-only means any shell command
+  # the model is induced to run executes with NO disk-write and NO network
+  # access, so a poisoned snippet can't write to disk or exfiltrate. The
+  # built-in tools the agent legitimately uses are not sandboxed shell
+  # commands, so they still work. Removes the residual shell-exec risk
+  # without a per-tool allowlist (which Codex lacks).
+  CODEX_FLAGS=(exec --json --sandbox read-only)
   if [ -n "$MODEL" ]; then
     CODEX_FLAGS+=(--model "$MODEL")
   fi
