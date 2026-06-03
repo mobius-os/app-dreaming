@@ -1,7 +1,7 @@
 {
   "id": "dreaming",
   "name": "Dreaming",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "While you sleep, Möbius dreams: it interviews the agents that worked during the day, sharpens its own skills and memory, hardens your apps, and leaves you a one-page morning brief with a few tap-to-answer questions. Quiet nights are skipped — your streak resets when you take a night off.",
   "author": "mobius-os",
   "license": "MIT",
@@ -18,7 +18,9 @@
       "hour": 6,
       "minute": 0,
       "timezone": null,
+      "cron": "0 6 * * *",
       "verbosity": "standard",
+      "exclude_apps": [],
       "provider": "claude",
       "model": null
     }
