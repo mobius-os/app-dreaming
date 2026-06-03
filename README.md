@@ -1,14 +1,14 @@
 # Dreaming
 
-A nightly morning-report app for [Möbius](https://github.com/mobius-os). While you sleep, a sub-agent reads what you did the previous day across your Möbius — apps you opened, chats you had, things you installed — and writes a one-page HTML report. Open Dreaming in the morning to read it.
+The nightly self-improvement loop for [Möbius](https://github.com/mobius-os). While you sleep, Möbius *dreams*: a real agent wakes up with the whole night ahead of it and does the slow, deferred work the daytime agent never has time for. In the morning it hands you a one-page brief and a short conversation with a few decisions to tap through over coffee.
 
-Quiet days don't get a fabricated report. If you didn't do anything meaningful, the dreamer takes the night off and your streak resets to zero.
+Quiet nights are skipped. If nothing meaningful happened, the dreamer takes the night off and your streak resets to zero.
 
 ## Install
 
 ### Via the App Store (recommended)
 
-Open the **App Store** mini-app in Möbius, search for "Dreaming", tap **Install**.
+Open the **App Store** mini-app in Möbius, find **Dreaming**, tap **Install**.
 
 ### Via paste-a-URL
 
@@ -18,41 +18,37 @@ In the App Store, choose **Install from URL** and paste:
 https://raw.githubusercontent.com/mobius-os/app-dreaming/main/mobius.json
 ```
 
-Möbius will fetch the manifest, show you the requested permissions and schedule, and install with one tap.
+Möbius fetches the manifest, shows you the requested permissions and schedule, and installs with one tap.
+
+## What a dream does
+
+The run is one multi-turn goal, not a single prompt. Working from the day's activity and chats, the dreamer:
+
+1. **Interviews the agents that worked during the day.** It forks each chat (and each app sub-agent run) into a throwaway copy — reusing the same provider that did the original work — and asks what was hard, what it learned, what you'd want flagged. Your real chats are never touched.
+2. **Sharpens its own skills and memory.** What it learns from the interviews gets folded back into the agent's skills (including the dreaming skill itself) and into **Mind**, the knowledge graph. Each night's dream is meant to make the next one better.
+3. **Hardens your apps.** It opens each app, exercises the paths you actually use, and fixes the small, obviously-correct breakages so you wake to working apps. Anything with a judgment call is left as a proposal, not applied.
+4. **Researches what you care about and proposes features**, each tied to something it observed you doing.
+5. **Writes the brief and opens the morning chat.** A standalone HTML brief lands in `reports/<date>.html`; the questions live in a fresh morning chat as tap-to-answer cards. Open Dreaming to read the brief with that chat mounted underneath it.
+
+When you answer the cards in the morning, that closes the loop: the dreamer acts on your decisions and records what your answers taught it, so tomorrow night's dream wastes fewer of your taps.
+
+## No sandbox, by design
+
+The dreamer runs with **full tools and a real token** — it is the agent, trusted, not a locked-down script. That is deliberate: Möbius's philosophy is *code empowers the agent; it does not police it*. Safety comes from instruction, not tool-denial — every change it makes is in `/data`'s git history and reversible, it never auto-applies anything risky (security changes with behavior impact, destructive data ops, dependency major-bumps, anything that hits paid APIs or notifies other people), and it surfaces those as proposals in the brief instead.
 
 ## Customize
 
-Everything is editable from the **Settings** tab inside the app:
+From the app's **Settings** tab:
 
-- **Editorial brief** — what the dreamer should notice, what to weight, what to skip. This is the highest-leverage knob. Write it in your own voice.
-- **Verbosity** — terse, standard, or chatty. Standard is a few paragraphs with 2–4 suggestions and a closing observation.
-- **Agent / Model** — Claude or Codex; pick any model from a connected provider.
-- **Dream time** — when the cron fires. Defaults to 06:00 in your local time (with DST handled automatically). Untick "use my local time" to pin to UTC instead.
+- **Verbosity** — terse, standard, or chatty.
+- **Agent / Model** — Claude or Codex; any model from a connected provider.
+- **Dream time** — when the cron fires. Defaults to 06:00 local (DST handled); untick "use my local time" to pin to UTC.
 
-Schedule changes take effect within 10 minutes (the cron sync runs every 10).
-
-The **Reports** tab lists every dream the dreamer has written, newest first. Tap a card to expand. The body and tl;dr render with DOMPurify sanitisation; an injected stylesheet handles typography.
-
-## How it works
-
-A small `fetch.sh` cron job runs at your chosen time. It:
-
-1. Pulls the last 24h of activity from `GET /api/admin/activity` (gracefully degrades if that endpoint isn't deployed — the dreamer falls back to chats-only signal).
-2. Pulls recent chats from `GET /api/chats/` and a few messages from each.
-3. Reads its own last 7 days of reports so it doesn't repeat itself.
-4. Composes a prompt: system schema + your editorial brief + yesterday's context + recent dreams.
-5. Invokes Claude (or Codex) with **no tools** — the whole context is already in the prompt; there's nothing left to fetch.
-6. Parses an `<article class="dreaming-report">` block from the reply and PUTs it to `reports/YYYY-MM-DD.html`.
-7. Updates `streak.json` — increments if yesterday was also an active day, resets to 0 on night-off.
-8. Sends a push notification with the tl;dr.
-
-The service token is held by `fetch.sh` and never enters the agent's prompt, so a prompt-injection in a chat snippet has nothing to exfiltrate and no shell to run.
+Schedule changes take effect within 10 minutes (the cron sync runs every 10). How the dreamer *dreams* — what it prioritizes, how it interviews, how long the brief runs — lives in the editable dreaming skill, which the dreamer revises itself as it learns what's worth doing.
 
 ## Streak
 
-The streak counts consecutive days the dreamer found meaningful Möbius activity to write about. A "no activity today" night resets it to zero; the next active day starts at 1. Same-day re-runs (using "Run dreamer now" multiple times) don't double-count.
-
-This is deliberately not a "consecutive days the app ran" counter — that would reward leaving Möbius open, not engaging with it.
+The streak counts consecutive days the dreamer found meaningful Möbius activity to dream about. A night off resets it to zero; the next active day starts at 1. It deliberately is not a "days the app ran" counter — that would reward leaving Möbius open, not engaging with it.
 
 ## License
 
