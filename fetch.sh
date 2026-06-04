@@ -168,8 +168,8 @@ except Exception as e:
     print(f"(could not list chats: {e})")
 PY
 
-# app-feedback.md — cross-app feedback forms (e.g. News digest feedback)
-# written under shared/app-feedback/. Dreaming can use these as durable
+# app-feedback.md — cross-app feedback forms written under
+# shared/app-feedback/<app-slug>/. Dreaming can use these as durable
 # product/editorial signals without needing to know each app's numeric id.
 python3 - "$API_BASE_URL" "$SERVICE_TOKEN" >"$INPUTS/app-feedback.md" 2>>"$LOG" <<'PY' || true
 import json, sys, urllib.parse, urllib.request
@@ -181,29 +181,47 @@ def get_json(path):
     with urllib.request.urlopen(req, timeout=20) as r:
         return json.loads(r.read().decode("utf-8"))
 
-print("# Recent app feedback\n")
-try:
+def list_entries(prefix, limit=500, max_pages=20):
     cursor = None
     seen = set()
     entries = []
-    for _ in range(20):
-        path = "/api/storage/shared-list/app-feedback/news"
+    for _ in range(max_pages):
+        path = "/api/storage/shared-list/" + urllib.parse.quote(prefix.strip("/"), safe="/")
+        params = {"limit": str(limit)}
         if cursor:
-            path += "?" + urllib.parse.urlencode({"cursor": cursor})
+            params["cursor"] = cursor
+        path += "?" + urllib.parse.urlencode(params)
         data = get_json(path)
-        for entry in data.get("entries", []):
-            if entry.get("type") == "file" and str(entry.get("name", "")).endswith(".json"):
-                entries.append(entry)
+        entries.extend(data.get("entries", []))
         nxt = data.get("next_cursor")
         if not nxt or nxt in seen:
             break
         seen.add(nxt)
         cursor = nxt
+    return entries
+
+print("# Recent app feedback\n")
+try:
+    entries = []
+    app_dirs = []
+    for entry in list_entries("app-feedback"):
+        name = entry.get("name")
+        path = entry.get("path")
+        if entry.get("type") == "dir" and isinstance(path, str):
+            app_dirs.append(path)
+        elif entry.get("type") == "dir" and isinstance(name, str):
+            app_dirs.append("app-feedback/" + name)
+        elif entry.get("type") == "file" and str(name or "").endswith(".json"):
+            entries.append(entry)
+    for app_dir in sorted(set(app_dirs)):
+        for entry in list_entries(app_dir):
+            if entry.get("type") == "file" and str(entry.get("name", "")).endswith(".json"):
+                entries.append(entry)
     entries = sorted(entries, key=lambda e: e.get("modified_at", ""), reverse=True)[:20]
     if not entries:
         print("(no app feedback)")
     for entry in entries:
-        path = entry.get("path") or f"app-feedback/news/{entry.get('name','')}"
+        path = entry.get("path") or f"app-feedback/{entry.get('name','')}"
         try:
             item = get_json("/api/storage/shared/" + urllib.parse.quote(path, safe="/"))
             app = item.get("app") or item.get("app_id") or "app"
@@ -261,7 +279,7 @@ fi
 # Record the app id where the runner's goal message and the agent can
 # find it (the agent writes reports to apps/<app_id>/reports/).
 printf '%s\n' "$APP_ID" >"$INPUTS/app_id"
-log "gathered inputs (activity, chats, prev-report) into $INPUTS/"
+log "gathered inputs (activity, chats, app-feedback, prev-report) into $INPUTS/"
 
 # --- heartbeat: prove liveness while the long run is in flight --------
 # A background loop touches the heartbeat file every 60s. A monitor (or a
