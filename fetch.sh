@@ -168,6 +168,55 @@ except Exception as e:
     print(f"(could not list chats: {e})")
 PY
 
+# app-feedback.md — cross-app feedback forms (e.g. News digest feedback)
+# written under shared/app-feedback/. Dreaming can use these as durable
+# product/editorial signals without needing to know each app's numeric id.
+python3 - "$API_BASE_URL" "$SERVICE_TOKEN" >"$INPUTS/app-feedback.md" 2>>"$LOG" <<'PY' || true
+import json, sys, urllib.parse, urllib.request
+base, token = sys.argv[1].rstrip("/"), sys.argv[2]
+headers = {"Authorization": "Bearer "+token}
+
+def get_json(path):
+    req = urllib.request.Request(base+path, headers=headers)
+    with urllib.request.urlopen(req, timeout=20) as r:
+        return json.loads(r.read().decode("utf-8"))
+
+print("# Recent app feedback\n")
+try:
+    cursor = None
+    seen = set()
+    entries = []
+    for _ in range(20):
+        path = "/api/storage/shared-list/app-feedback/news"
+        if cursor:
+            path += "?" + urllib.parse.urlencode({"cursor": cursor})
+        data = get_json(path)
+        for entry in data.get("entries", []):
+            if entry.get("type") == "file" and str(entry.get("name", "")).endswith(".json"):
+                entries.append(entry)
+        nxt = data.get("next_cursor")
+        if not nxt or nxt in seen:
+            break
+        seen.add(nxt)
+        cursor = nxt
+    entries = sorted(entries, key=lambda e: e.get("modified_at", ""), reverse=True)[:20]
+    if not entries:
+        print("(no app feedback)")
+    for entry in entries:
+        path = entry.get("path") or f"app-feedback/news/{entry.get('name','')}"
+        try:
+            item = get_json("/api/storage/shared/" + urllib.parse.quote(path, safe="/"))
+            app = item.get("app") or item.get("app_id") or "app"
+            signal = item.get("signal") or "note"
+            date = item.get("report_date") or item.get("created_at") or ""
+            text = (item.get("text") or "").replace("\n", " ").strip()
+            print(f"- [{app}] {signal} {date}: {text or '(no note)'}")
+        except Exception as exc:
+            print(f"- {path}: could not read ({exc})")
+except Exception as e:
+    print(f"(could not list app feedback: {e})")
+PY
+
 # prev-report.html — yesterday's brief, so the agent doesn't repeat
 # itself. Enumerate every cursor page and fetch the newest report.
 PREV="$(API_BASE_URL="$API_BASE_URL" APP_ID="$APP_ID" SERVICE_TOKEN="$SERVICE_TOKEN" python3 - <<'PY' 2>>"$LOG"
