@@ -1,7 +1,7 @@
 {
   "id": "dreaming",
   "name": "Dreaming",
-  "version": "2.0.1",
+  "version": "2.0.3",
   "description": "While you sleep, Möbius dreams: it interviews the agents that worked during the day, sharpens its own skills and memory, hardens your apps, and leaves you a one-page morning brief with a few tap-to-answer questions. Quiet nights are skipped — your streak resets when you take a night off.",
   "author": "mobius-os",
   "license": "MIT",
@@ -11,7 +11,8 @@
   "offline_capable": true,
   "permissions": {
     "cross_app_access": "read",
-    "share_with_apps": "none"
+    "share_with_apps": "none",
+    "chat_log_access": "summary"
   },
   "storage_seeds": {
     "settings.json": {
@@ -21,6 +22,7 @@
       "cron": "0 6 * * *",
       "verbosity": "standard",
       "exclude_apps": [],
+      "agent_id": "builder",
       "provider": "claude",
       "model": null
     }
