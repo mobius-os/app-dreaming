@@ -1,8 +1,8 @@
 {
   "id": "dreaming",
   "name": "Dreaming",
-  "version": "2.0.4",
-  "description": "While you sleep, Möbius dreams: it interviews the agents that worked during the day, sharpens its own skills and memory, hardens your apps, and leaves you a one-page morning brief with a few tap-to-answer questions. Quiet nights are skipped — your streak resets when you take a night off.",
+  "version": "2.0.5",
+  "description": "While you sleep, Möbius dreams: it interviews the agents that worked during the day, sharpens its own skills and memory, hardens your apps, and leaves you a one-page morning brief with a feedback path into chat. Quiet nights are skipped — your streak resets when you take a night off.",
   "author": "mobius-os",
   "license": "MIT",
   "homepage": "https://github.com/mobius-os/app-dreaming",

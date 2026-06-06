@@ -28,9 +28,9 @@ The run is one multi-turn goal, not a single prompt. Working from the day's acti
 2. **Sharpens its own skills and memory.** What it learns from the interviews gets folded back into the agent's skills (including the dreaming skill itself) and into **Mind**, the knowledge graph. Each night's dream is meant to make the next one better.
 3. **Hardens your apps.** It opens each app, exercises the paths you actually use, and fixes the small, obviously-correct breakages so you wake to working apps. Anything with a judgment call is left as a proposal, not applied.
 4. **Researches what you care about and proposes features**, each tied to something it observed you doing.
-5. **Writes the brief and opens the morning chat.** A standalone HTML brief lands in `reports/<date>.html`; the questions live in a fresh morning chat as tap-to-answer cards. Open Dreaming to read the brief with that chat mounted underneath it.
+5. **Writes the brief and links feedback to chat.** A standalone HTML brief lands in `reports/<date>.html`; when the run records a related chat, Dreaming opens feedback into that thread with a ready-to-edit draft.
 
-When you answer the cards in the morning, that closes the loop: the dreamer acts on your decisions and records what your answers taught it, so tomorrow night's dream wastes fewer of your taps.
+When you leave feedback in the morning, that closes the loop: the dreamer can act on your notes and records what your answers taught it, so tomorrow night's dream wastes fewer of your taps.
 
 ## No sandbox, by design
 

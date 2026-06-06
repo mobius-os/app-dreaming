@@ -110,22 +110,6 @@ export function hardenReportHtml(html) {
   return `<!doctype html><html><head>${meta}</head><body>${body}</body></html>`
 }
 
-function htmlToText(html) {
-  if (typeof html !== 'string') return ''
-  return html
-    .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, ' ')
-    .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, ' ')
-    .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/gi, ' ')
-    .replace(/&amp;/gi, '&')
-    .replace(/&lt;/gi, '<')
-    .replace(/&gt;/gi, '>')
-    .replace(/&quot;/gi, '"')
-    .replace(/&#39;/gi, "'")
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
 // "0 6 * * *" -> "06:00" for the <input type="time"> value.
 function hourToTimeValue(hour) {
   return `${String(hour).padStart(2, '0')}:00`
@@ -856,18 +840,17 @@ function MorningChat({ chatId }) {
   )
 }
 
-function FeedbackLauncher({ dateStr, html }) {
+function FeedbackLauncher({ dateStr, chatId }) {
   const openFeedbackChat = () => {
-    const excerpt = htmlToText(html).slice(0, 1200)
     const draft = [
       `Feedback on the Dreaming brief for ${dateStr}:`,
       '',
-      excerpt ? `Brief excerpt: ${excerpt}` : '',
-      '',
       'My feedback:',
-    ].filter(Boolean).join('\n')
+    ].join('\n')
     window.parent.postMessage(
-      { type: 'moebius:new-chat', draft },
+      chatId
+        ? { type: 'moebius:open-chat', chatId, draft }
+        : { type: 'moebius:new-chat', draft },
       window.location.origin,
     )
   }
@@ -1034,7 +1017,7 @@ function ReportDetail({ dateStr, storage, online, onBack }) {
             ) : (
               <MorningChat chatId={chatId} />
             )}
-            <FeedbackLauncher dateStr={dateStr} html={state.html} />
+            <FeedbackLauncher dateStr={dateStr} chatId={chatId} />
           </div>
         </div>
       )}
