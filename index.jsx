@@ -231,8 +231,18 @@ function dayOfMonth(dateStr) {
 // ---------------------------------------------------------------------------
 // Theme + motion. Structural colors are CSS variables so light + dark both
 // work; the dream-violet accent is the one committed hardcode. A handful of
-// keyframes (drift, shimmer, rise) are injected once so loading + entrance
-// states feel alive rather than static.
+// keyframes (drift, shimmer, rise) feed loading + entrance states so they feel
+// alive rather than static.
+//
+// One module-level `const CSS` is rendered once at the app root as
+// <style>{CSS}</style>; the app's class prefix is `dr-`. The shared chrome
+// (Root / Header / Sheet / Empty / Card / Button / Input / Segmented /
+// ChatEmbed / SyncPill) is fenced with `/* mobius-ui:<Block> v1 … */` markers
+// so a future extraction is mechanical; app-specific blocks (aurora, moon
+// tile, date tile, streak badge, brief↔chat split, settings) stay below as
+// unfenced `dr-` rules and keep their exact current values. The dream-violet
+// accent (#7c6cf0 / #a78bfa) is the one committed hardcode the theme can't
+// express. Structural colors are theme tokens.
 // ---------------------------------------------------------------------------
 
 const ACCENT = '#7c6cf0'        // dreaming's own violet
@@ -240,356 +250,364 @@ const ACCENT_2 = '#a78bfa'      // lighter companion for gradients/glows
 const ACCENT_DIM = 'rgba(124,108,240,0.13)'
 const ACCENT_DIM_2 = 'rgba(167,139,250,0.10)'
 
-const KEYFRAMES = `
-@keyframes dreaming-drift {
+const CSS = `
+@keyframes dr-drift {
   0%   { transform: translateY(0) rotate(0deg); opacity: .85; }
   50%  { transform: translateY(-6px) rotate(4deg); opacity: 1; }
   100% { transform: translateY(0) rotate(0deg); opacity: .85; }
 }
-@keyframes dreaming-shimmer {
-  0%   { background-position: -180% 0; }
-  100% { background-position: 180% 0; }
-}
-@keyframes dreaming-rise {
+@keyframes dr-rise {
   from { opacity: 0; transform: translateY(8px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-@keyframes dreaming-pulse {
-  0%, 100% { opacity: .55; }
-  50%      { opacity: 1; }
-}
-@keyframes dreaming-spin {
+@keyframes dr-spin {
   to { transform: rotate(360deg); }
+}
+
+/* mobius-ui:Root v1 — keep in sync; library candidate. Diverge below the marker only. */
+.dr-root {
+  position: relative;
+  display: flex; flex-direction: column;
+  height: 100%; width: 100%; max-width: 100%;
+  overflow-x: hidden;
+  background: var(--bg); color: var(--text); font-family: var(--font);
+  -webkit-font-smoothing: antialiased;
+}
+.dr-scroll {
+  flex: 1; min-height: 0;
+  overflow-y: auto; overflow-x: hidden;
+  padding: 16px 20px 40px;
+  word-break: break-word; overflow-wrap: anywhere;
+  position: relative; z-index: 1;
+}
+/* /mobius-ui:Root */
+
+/* mobius-ui:Header v1 — keep in sync; library candidate. Diverge below the marker only. */
+.dr-header {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: space-between; gap: 12px;
+  flex-wrap: wrap;
+  padding: 22px 20px 0;
+  position: relative; z-index: 1;
+}
+.dr-brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
+.dr-mark {
+  flex: 0 0 auto; width: 34px; height: 34px; border-radius: 11px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(135deg, ${ACCENT} 0%, ${ACCENT_2} 100%);
+  box-shadow: 0 4px 16px -6px ${ACCENT};
+}
+.dr-mark-glyph { font-size: 18px; line-height: 1; animation: dr-drift 6s ease-in-out infinite; }
+.dr-brand-text { display: flex; flex-direction: column; min-width: 0; line-height: 1.15; }
+.dr-title { margin: 0; font-size: 21px; font-weight: 750; letter-spacing: -0.5px; }
+.dr-subtitle { font-size: 11.5px; color: var(--muted); font-weight: 500; margin-top: 1px; }
+.dr-header-right { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; flex: 0 0 auto; position: relative; z-index: 1; }
+/* /mobius-ui:Header */
+
+/* mobius-ui:Empty v1 — keep in sync; library candidate. Diverge below the marker only. */
+.dr-empty {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  max-width: 440px; margin: 0 auto; padding: 60px 24px 40px;
+  color: var(--muted); font-size: 14px; line-height: 1.65;
+}
+.dr-empty-mark {
+  width: 74px; height: 74px; margin: 0 auto 18px; border-radius: 22px;
+  display: flex; align-items: center; justify-content: center;
+  background: linear-gradient(160deg, ${ACCENT_DIM} 0%, ${ACCENT_DIM_2} 100%);
+  border: 1px solid var(--border);
+}
+.dr-empty-mark-glyph { font-size: 34px; animation: dr-drift 6s ease-in-out infinite; }
+.dr-empty-title { font-size: 17px; font-weight: 700; color: var(--text); letter-spacing: -0.2px; margin-bottom: 8px; }
+/* /mobius-ui:Empty */
+
+/* mobius-ui:Card v1 — keep in sync; library candidate. Diverge below the marker only. */
+.dr-card {
+  display: flex; align-items: stretch; gap: 14px; width: 100%; min-height: 44px;
+  padding: 15px 16px; text-align: left;
+  background: var(--surface); color: var(--text); font-family: var(--font);
+  border: 1px solid var(--border); border-radius: 16px;
+  position: relative; overflow: hidden; cursor: pointer;
+  transition: border-color .16s ease, transform .12s ease, box-shadow .16s ease, background .16s ease;
+}
+button.dr-card { cursor: pointer; }
+.dr-card:hover { border-color: ${ACCENT}; box-shadow: 0 6px 22px -12px ${ACCENT}; }
+.dr-card:active { transform: scale(.992); }
+.dr-card:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; }
+.dr-card.is-latest { border-left: 3px solid ${ACCENT}; }
+/* /mobius-ui:Card */
+
+/* mobius-ui:Button v1 — keep in sync; library candidate. Diverge below the marker only. */
+.dr-btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px;
+  min-height: 44px; padding: 10px 16px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--surface); color: var(--text);
+  font-family: var(--font); font-size: 13px; font-weight: 650; cursor: pointer; white-space: nowrap;
+  transition: background .14s ease, border-color .14s ease, transform .1s ease, color .14s ease;
+}
+.dr-btn:active { transform: scale(.97); }
+.dr-btn:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; }
+.dr-btn:disabled { opacity: 0.5; cursor: default; transform: none; }
+/* /mobius-ui:Button */
+
+/* mobius-ui:Segmented v1 — keep in sync; library candidate. Diverge below the marker only. */
+.dr-seg {
+  display: flex; gap: 2px; padding: 3px;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+}
+.dr-seg-btn {
+  min-height: 44px; padding: 6px 15px; border: none; border-radius: 7px;
+  background: transparent; color: var(--muted); font-family: var(--font);
+  font-size: 13px; font-weight: 650; cursor: pointer; transition: background .15s, color .15s;
+}
+.dr-seg-btn:hover { color: var(--text); }
+.dr-seg-btn.is-active { background: ${ACCENT}; color: #fff; }
+/* /mobius-ui:Segmented */
+
+/* mobius-ui:ChatEmbed v1 — keep in sync; library candidate. Diverge below the marker only. */
+.dr-chat-embed { width: 100%; flex: 1; min-height: 420px; }
+.dr-chat-embed iframe { display: block; width: 100%; height: 100%; border: 0; }
+/* /mobius-ui:ChatEmbed */
+
+/* mobius-ui:Spinner v1 — keep in sync; library candidate. */
+.dr-spinner {
+  width: 26px; height: 26px; border-radius: 50%;
+  border: 2.5px solid ${ACCENT_DIM}; border-top-color: ${ACCENT};
+  animation: dr-spin 0.8s linear infinite;
+}
+.dr-spinner-sm { width: 16px; height: 16px; border-width: 2px; }
+@media (prefers-reduced-motion: reduce) { .dr-spinner { animation: none; } }
+/* /mobius-ui:Spinner */
+
+/* mobius-ui:Scrollskin v1 — keep in sync; library candidate. Add the \`dr-scroll\` class to a scroller. */
+.dr-scroll::-webkit-scrollbar { width: 9px; height: 9px; }
+.dr-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
+.dr-scroll::-webkit-scrollbar-thumb:hover { background: var(--muted); background-clip: padding-box; }
+/* /mobius-ui:Scrollskin */
+
+/* ---- App-specific (dreaming) — keep exact current values ---- */
+
+/* The detail view reuses the shared empty shape for its missing/error notes,
+   but with a tighter top inset than the list's first-run empty. */
+.dr-empty.is-compact { padding-top: 56px; }
+
+/* Entrance + press affordances. A handful of dreaming surfaces ride a small
+   rise-in on mount; pressable controls get the same active/focus feel as the
+   shared card without being one. */
+.dr-rise { animation: dr-rise .32s cubic-bezier(.22,.61,.36,1) both; }
+.dr-pressable { transition: background .14s ease, border-color .14s ease, transform .1s ease, color .14s ease; }
+.dr-pressable:active { transform: scale(.97); }
+.dr-pressable:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; }
+
+/* A faint aurora wash behind the header — pure decoration, pointer-none, so
+   the top of the app reads as a sky rather than a flat bar. */
+.dr-aurora {
+  position: absolute; top: 0; left: 0; right: 0; height: 220px;
+  background: radial-gradient(120% 90% at 18% -10%, ${ACCENT_DIM} 0%, transparent 55%), radial-gradient(110% 80% at 92% -20%, ${ACCENT_DIM_2} 0%, transparent 60%);
+  pointer-events: none; z-index: 0;
+}
+.dr-divider { height: 1px; background: var(--border); margin: 16px 20px 0; position: relative; z-index: 1; }
+
+/* Streak badge — header pill + standalone streak bar share the base; the bar
+   variant bumps padding + font. */
+.dr-streak-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 11px; border-radius: 999px;
+  background: ${ACCENT_DIM}; color: ${ACCENT};
+  border: 1px solid transparent;
+  font-size: 12.5px; font-weight: 650; line-height: 1.2; white-space: nowrap;
+}
+.dr-streak-badge.is-quiet {
+  background: var(--surface); color: var(--muted); border-color: var(--border);
+}
+.dr-streak-bar { max-width: 660px; margin: 0 auto 16px; display: flex; }
+.dr-streak-bar .dr-streak-badge { padding: 7px 13px; font-size: 13px; }
+.dr-streak-flame { animation: dr-drift 4s ease-in-out infinite; }
+.dr-streak-num { font-weight: 750; }
+.dr-streak-unit { font-weight: 550; }
+.dr-streak-dots { margin-left: 4px; letter-spacing: 1px; opacity: 0.55; font-size: 9px; }
+
+/* Reports list + dated card */
+.dr-list { display: flex; flex-direction: column; gap: 11px; max-width: 660px; margin: 0 auto; }
+.dr-date-tile {
+  width: 46px; flex-shrink: 0; border-radius: 12px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 0; align-self: center;
+  background: ${ACCENT_DIM}; color: ${ACCENT};
+  padding: 8px 0; line-height: 1;
+}
+.dr-date-tile.is-latest {
+  background: linear-gradient(160deg, ${ACCENT} 0%, ${ACCENT_2} 100%); color: #fff;
+}
+.dr-date-tile-day { font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; opacity: 0.92; }
+.dr-date-tile-num { font-size: 19px; font-weight: 750; letter-spacing: -0.5px; }
+.dr-card-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; justify-content: center; }
+.dr-card-label-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.dr-card-label { font-size: 16px; font-weight: 700; letter-spacing: -0.2px; line-height: 1.2; }
+.dr-card-sub { font-size: 12px; color: var(--muted); font-weight: 500; }
+.dr-card-tldr {
+  font-size: 13px; color: var(--muted); line-height: 1.5; margin-top: 5px;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+}
+.dr-card-chevron { align-self: center; font-size: 20px; color: var(--muted); flex-shrink: 0; line-height: 1; opacity: 0.7; }
+.dr-latest-pill {
+  font-size: 10px; font-weight: 750; letter-spacing: 0.7px;
+  text-transform: uppercase; color: #fff;
+  background: ${ACCENT}; padding: 2px 8px; border-radius: 999px;
+}
+
+/* Loading / error / offline states */
+.dr-loading-wrap { text-align: center; padding: 64px 24px; color: var(--muted); font-size: 13px; }
+.dr-loading-wrap .dr-spinner { margin: 0 auto 14px; }
+.dr-error-box {
+  max-width: 660px; margin: 0 auto; padding: 16px; border-radius: 14px;
+  border: 1px solid var(--border); background: var(--surface);
+  color: var(--text); font-size: 13px; line-height: 1.55;
+  display: flex; flex-direction: column; gap: 10px;
+}
+.dr-retry-btn {
+  align-self: flex-start; padding: 7px 14px; border-radius: 9px;
+  border: 1px solid ${ACCENT}; background: transparent; color: ${ACCENT};
+  font-size: 12.5px; font-weight: 650; cursor: pointer; font-family: var(--font);
+}
+.dr-offline-banner {
+  max-width: 660px; margin: 0 auto 14px; padding: 10px 14px;
+  border-radius: 12px; background: ${ACCENT_DIM}; border: 1px solid var(--border);
+  color: var(--text); font-size: 12.5px; line-height: 1.45;
+  display: flex; align-items: center; gap: 8px;
+}
+
+/* Report detail — brief + chat split view */
+.dr-detail {
+  position: absolute; inset: 0; display: flex; flex-direction: column;
+  background: var(--bg); z-index: 5;
+}
+.dr-detail-bar {
+  display: flex; align-items: center; gap: 12px;
+  padding: 11px 14px; border-bottom: 1px solid var(--border);
+  flex-shrink: 0; background: var(--surface);
+}
+.dr-back-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 7px 13px 7px 9px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg);
+  color: var(--text); font-size: 13px; font-weight: 650;
+  cursor: pointer; font-family: var(--font); flex-shrink: 0;
+}
+.dr-back-glyph { font-size: 16px; }
+.dr-detail-title { display: flex; flex-direction: column; min-width: 0; line-height: 1.25; flex: 1; }
+.dr-detail-title-main { font-size: 15px; font-weight: 700; letter-spacing: -0.2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dr-detail-title-sub { font-size: 11.5px; color: var(--muted); font-weight: 500; }
+.dr-split-body {
+  flex: 1; min-height: 0; overflow-y: auto; overflow-x: hidden;
+  display: flex; flex-direction: column;
+}
+.dr-brief-panel {
+  flex-shrink: 0; display: flex; flex-direction: column;
+  border-bottom: 1px solid var(--border);
+}
+.dr-brief-iframe { width: 100%; border: none; background: var(--bg); display: block; }
+.dr-brief-loading {
+  min-height: 320px; display: flex; flex-direction: column;
+  align-items: center; justify-content: center; gap: 12px;
+  color: var(--muted); font-size: 13px;
+}
+.dr-chat-mount-wrap { position: relative; }
+.dr-chat-panel { flex-shrink: 0; display: flex; flex-direction: column; background: var(--bg); }
+.dr-chat-header { display: flex; align-items: center; gap: 8px; padding: 13px 16px 9px; flex-shrink: 0; }
+.dr-chat-header-dot {
+  width: 7px; height: 7px; border-radius: 50%; background: ${ACCENT};
+  box-shadow: 0 0 0 4px ${ACCENT_DIM}; flex-shrink: 0;
+}
+.dr-chat-header-text { font-size: 13px; font-weight: 700; letter-spacing: -0.1px; }
+.dr-chat-header-hint { font-size: 11.5px; color: var(--muted); font-weight: 500; margin-left: auto; }
+.dr-chat-resolving {
+  padding: 20px 16px 28px; display: flex; align-items: center; gap: 10px;
+  color: var(--muted); font-size: 12.5px;
+}
+.dr-no-chat-note {
+  margin: 14px 16px 22px; padding: 14px 16px; border-radius: 13px;
+  background: var(--surface); border: 1px dashed var(--border);
+  color: var(--muted); font-size: 12.5px; line-height: 1.55;
+  display: flex; align-items: flex-start; gap: 10px;
+}
+.dr-no-chat-glyph { font-size: 15px; line-height: 1.2; }
+.dr-feedback-row { margin: 12px 16px 18px; padding-top: 12px; border-top: 1px solid var(--border); }
+.dr-feedback-btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-height: 40px; padding: 8px 14px; border-radius: 10px;
+  border: 1px solid ${ACCENT}; background: ${ACCENT_DIM};
+  color: ${ACCENT}; font-size: 13px; font-weight: 700;
+  cursor: pointer; font-family: var(--font);
+}
+
+/* Settings */
+.dr-settings-wrap { max-width: 580px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
+.dr-settings-card {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: 16px; padding: 18px; display: flex; flex-direction: column; gap: 10px;
+}
+.dr-section-head { display: flex; align-items: center; gap: 10px; }
+.dr-section-icon {
+  width: 30px; height: 30px; border-radius: 9px; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+  background: ${ACCENT_DIM}; font-size: 15px;
+}
+.dr-section-label { font-size: 14.5px; font-weight: 700; letter-spacing: -0.1px; margin: 0; }
+.dr-note { font-size: 12.5px; color: var(--muted); margin: 0; line-height: 1.55; }
+.dr-note-strong { color: var(--text); font-weight: 650; }
+.dr-time-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 2px; }
+.dr-time-input {
+  padding: 9px 12px; font-size: 16px; font-family: var(--font); font-weight: 600;
+  background: var(--bg); color: var(--text);
+  border: 1px solid var(--border); border-radius: 10px;
+  outline: none; width: 132px;
+}
+.dr-custom-cron-note {
+  font-size: 12px; color: var(--muted); line-height: 1.5;
+  padding: 10px 12px; border-radius: 11px;
+  background: var(--bg); border: 1px solid var(--border); margin-top: 2px;
+}
+.dr-custom-cron-note .dr-time-row { margin-top: 10px; }
+.dr-agent-select {
+  width: 100%; min-height: 42px; padding: 9px 12px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg); color: var(--text); font-size: 14px;
+  font-family: var(--font); font-weight: 650; outline: none;
+}
+.dr-agent-meta {
+  font-size: 12px; color: var(--muted); line-height: 1.5;
+  padding: 10px 12px; border-radius: 11px;
+  background: var(--bg); border: 1px solid var(--border);
+}
+.dr-model-label {
+  font-size: 11px; color: var(--muted); font-weight: 750;
+  text-transform: uppercase; letter-spacing: 0.4px; margin-top: 4px;
+}
+.dr-save-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 2px; }
+.dr-save-btn {
+  padding: 10px 22px; border-radius: 12px; border: none;
+  background: ${ACCENT}; color: #fff;
+  font-size: 13.5px; font-weight: 700; cursor: pointer;
+  font-family: var(--font); transition: background 0.15s, opacity .15s;
+  box-shadow: 0 6px 18px -8px ${ACCENT};
+}
+.dr-save-btn:disabled {
+  background: var(--surface); color: var(--muted); cursor: default; box-shadow: none;
+}
+.dr-toast { font-size: 12.5px; color: var(--green, #3fb950); font-weight: 650; }
+.dr-error-toast { font-size: 12.5px; color: var(--danger, #f85149); font-weight: 650; }
+.dr-schedule-hint {
+  font-size: 12px; color: var(--muted); line-height: 1.55;
+  padding: 11px 13px; border-radius: 12px;
+  background: ${ACCENT_DIM}; border: 1px solid var(--border);
+  display: flex; align-items: flex-start; gap: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dr-rise, .dr-mark-glyph, .dr-empty-mark-glyph, .dr-streak-flame { animation: none !important; }
 }
 `
 
-// Inject the keyframes + a couple of structural rules once. CSS-in-JS can't
-// express @keyframes or :hover/:focus inline, so a single scoped <style> tag
-// carries them. Idempotent — keyed by id so a remount doesn't duplicate it.
-function useDreamingStyles() {
-  useEffect(() => {
-    const id = 'dreaming-keyframes'
-    if (document.getElementById(id)) return
-    const el = document.createElement('style')
-    el.id = id
-    el.textContent = KEYFRAMES + `
-      .dreaming-card { transition: border-color .16s ease, transform .12s ease, box-shadow .16s ease, background .16s ease; }
-      .dreaming-card:hover { border-color: ${ACCENT}; box-shadow: 0 6px 22px -12px ${ACCENT}; }
-      .dreaming-card:active { transform: scale(.992); }
-      .dreaming-card:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; }
-      .dreaming-pressable { transition: background .14s ease, border-color .14s ease, transform .1s ease, color .14s ease; }
-      .dreaming-pressable:active { transform: scale(.97); }
-      .dreaming-pressable:focus-visible { outline: 2px solid ${ACCENT}; outline-offset: 2px; }
-      .dreaming-rise { animation: dreaming-rise .32s cubic-bezier(.22,.61,.36,1) both; }
-      .dreaming-scroll::-webkit-scrollbar { width: 9px; height: 9px; }
-      .dreaming-scroll::-webkit-scrollbar-thumb { background: var(--border); border-radius: 99px; border: 2px solid transparent; background-clip: padding-box; }
-      .dreaming-scroll::-webkit-scrollbar-thumb:hover { background: var(--muted); background-clip: padding-box; }
-      @media (prefers-reduced-motion: reduce) {
-        .dreaming-rise, [class^="dreaming-"] { animation: none !important; }
-      }
-    `
-    document.head.appendChild(el)
-    // Leave it mounted for the life of the document — other mounts reuse it.
-  }, [])
-}
-
-const S = {
-  root: {
-    height: '100%', display: 'flex', flexDirection: 'column',
-    background: 'var(--bg)', color: 'var(--text)',
-    fontFamily: 'var(--font)', maxWidth: '100%', overflowX: 'hidden',
-    position: 'relative',
-  },
-  // A faint aurora wash behind the header — pure decoration, pointer-none, so
-  // the top of the app reads as a sky rather than a flat bar.
-  aurora: {
-    position: 'absolute', top: 0, left: 0, right: 0, height: '220px',
-    background: `radial-gradient(120% 90% at 18% -10%, ${ACCENT_DIM} 0%, transparent 55%), radial-gradient(110% 80% at 92% -20%, ${ACCENT_DIM_2} 0%, transparent 60%)`,
-    pointerEvents: 'none', zIndex: 0,
-  },
-  header: {
-    padding: '22px 20px 0', display: 'flex', alignItems: 'center',
-    justifyContent: 'space-between', flexShrink: 0, gap: '12px',
-    flexWrap: 'wrap', position: 'relative', zIndex: 1,
-  },
-  titleRow: { display: 'flex', alignItems: 'center', gap: '11px', minWidth: 0 },
-  moonWrap: {
-    width: '34px', height: '34px', borderRadius: '11px', flexShrink: 0,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    background: `linear-gradient(135deg, ${ACCENT} 0%, ${ACCENT_2} 100%)`,
-    boxShadow: `0 4px 16px -6px ${ACCENT}`,
-  },
-  moon: { fontSize: '18px', lineHeight: 1, animation: 'dreaming-drift 6s ease-in-out infinite' },
-  titleStack: { display: 'flex', flexDirection: 'column', minWidth: 0, lineHeight: 1.15 },
-  title: {
-    fontSize: '21px', fontWeight: 750, letterSpacing: '-0.5px', margin: 0,
-  },
-  subtitle: { fontSize: '11.5px', color: 'var(--muted)', fontWeight: 500, marginTop: '1px' },
-  headerRight: { display: 'flex', alignItems: 'center', gap: '9px', flexWrap: 'wrap', position: 'relative', zIndex: 1 },
-  streakBadge: (quiet) => ({
-    display: 'inline-flex', alignItems: 'center', gap: '5px',
-    padding: '5px 11px', borderRadius: '999px',
-    background: quiet ? 'var(--surface)' : ACCENT_DIM,
-    color: quiet ? 'var(--muted)' : ACCENT,
-    border: `1px solid ${quiet ? 'var(--border)' : 'transparent'}`,
-    fontSize: '12.5px', fontWeight: 650, lineHeight: 1.2, whiteSpace: 'nowrap',
-  }),
-  tabs: {
-    display: 'flex', gap: '2px', background: 'var(--surface)',
-    borderRadius: '10px', padding: '3px', border: '1px solid var(--border)',
-  },
-  tab: (active) => ({
-    padding: '6px 15px', borderRadius: '7px', border: 'none', cursor: 'pointer',
-    fontSize: '13px', fontWeight: 650,
-    background: active ? ACCENT : 'transparent',
-    color: active ? '#fff' : 'var(--muted)',
-    transition: 'background 0.15s, color 0.15s',
-    fontFamily: 'var(--font)',
-  }),
-  divider: { height: '1px', background: 'var(--border)', margin: '16px 20px 0', position: 'relative', zIndex: 1 },
-  scroll: {
-    flex: 1, overflowY: 'auto', overflowX: 'hidden',
-    padding: '16px 20px 40px',
-    wordBreak: 'break-word', overflowWrap: 'anywhere', position: 'relative', zIndex: 1,
-  },
-
-  // Reports list
-  list: { display: 'flex', flexDirection: 'column', gap: '11px', maxWidth: '660px', margin: '0 auto' },
-  card: (latest) => ({
-    display: 'flex', alignItems: 'stretch', gap: '14px',
-    width: '100%', textAlign: 'left',
-    border: '1px solid var(--border)', borderRadius: '16px',
-    background: 'var(--surface)', padding: '15px 16px',
-    cursor: 'pointer', color: 'var(--text)', fontFamily: 'var(--font)',
-    position: 'relative', overflow: 'hidden',
-    borderLeft: latest ? `3px solid ${ACCENT}` : '1px solid var(--border)',
-  }),
-  dateTile: (latest) => ({
-    width: '46px', flexShrink: 0, borderRadius: '12px',
-    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
-    gap: '0px', alignSelf: 'center',
-    background: latest ? `linear-gradient(160deg, ${ACCENT} 0%, ${ACCENT_2} 100%)` : ACCENT_DIM,
-    color: latest ? '#fff' : ACCENT,
-    padding: '8px 0', lineHeight: 1,
-  }),
-  dateTileDay: { fontSize: '10px', fontWeight: 700, letterSpacing: '0.5px', textTransform: 'uppercase', opacity: 0.92 },
-  dateTileNum: { fontSize: '19px', fontWeight: 750, letterSpacing: '-0.5px' },
-  cardMain: { flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', gap: '3px', justifyContent: 'center' },
-  cardLabelRow: { display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' },
-  cardLabel: { fontSize: '16px', fontWeight: 700, letterSpacing: '-0.2px', lineHeight: 1.2 },
-  cardSub: { fontSize: '12px', color: 'var(--muted)', fontWeight: 500 },
-  cardTldr: {
-    fontSize: '13px', color: 'var(--muted)', lineHeight: 1.5, marginTop: '5px',
-    display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical',
-    overflow: 'hidden',
-  },
-  cardChevron: {
-    alignSelf: 'center', fontSize: '20px', color: 'var(--muted)',
-    flexShrink: 0, lineHeight: 1, opacity: 0.7,
-  },
-  latestPill: {
-    fontSize: '10px', fontWeight: 750, letterSpacing: '0.7px',
-    textTransform: 'uppercase', color: '#fff',
-    background: ACCENT, padding: '2px 8px', borderRadius: '999px',
-  },
-  chatPill: {
-    display: 'inline-flex', alignItems: 'center', gap: '4px',
-    fontSize: '11px', fontWeight: 600, color: ACCENT,
-    background: ACCENT_DIM, padding: '2px 8px', borderRadius: '999px',
-  },
-
-  empty: {
-    textAlign: 'center', padding: '60px 24px 40px', color: 'var(--muted)',
-    fontSize: '14px', lineHeight: 1.65, maxWidth: '440px', margin: '0 auto',
-  },
-  emptyMoonWrap: {
-    width: '74px', height: '74px', borderRadius: '22px', margin: '0 auto 18px',
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    background: `linear-gradient(160deg, ${ACCENT_DIM} 0%, ${ACCENT_DIM_2} 100%)`,
-    border: '1px solid var(--border)',
-  },
-  emptyMoon: { fontSize: '34px', animation: 'dreaming-drift 6s ease-in-out infinite' },
-  emptyTitle: { fontSize: '17px', fontWeight: 700, color: 'var(--text)', letterSpacing: '-0.2px', marginBottom: '8px' },
-
-  loadingWrap: { textAlign: 'center', padding: '64px 24px', color: 'var(--muted)', fontSize: '13px' },
-  spinner: {
-    width: '26px', height: '26px', borderRadius: '50%', margin: '0 auto 14px',
-    border: `2.5px solid ${ACCENT_DIM}`, borderTopColor: ACCENT,
-    animation: 'dreaming-spin 0.8s linear infinite',
-  },
-
-  errorBox: {
-    maxWidth: '660px', margin: '0 auto', padding: '16px', borderRadius: '14px',
-    border: '1px solid var(--border)', background: 'var(--surface)',
-    color: 'var(--text)', fontSize: '13px', lineHeight: 1.55,
-    display: 'flex', flexDirection: 'column', gap: '10px',
-  },
-  retryBtn: {
-    alignSelf: 'flex-start', padding: '7px 14px', borderRadius: '9px',
-    border: `1px solid ${ACCENT}`, background: 'transparent', color: ACCENT,
-    fontSize: '12.5px', fontWeight: 650, cursor: 'pointer', fontFamily: 'var(--font)',
-  },
-  offlineBanner: {
-    maxWidth: '660px', margin: '0 auto 14px', padding: '10px 14px',
-    borderRadius: '12px', background: ACCENT_DIM, border: '1px solid var(--border)',
-    color: 'var(--text)', fontSize: '12.5px', lineHeight: 1.45,
-    display: 'flex', alignItems: 'center', gap: '8px',
-  },
-
-  // Report detail (brief + chat split view)
-  detail: {
-    position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column',
-    background: 'var(--bg)', zIndex: 5,
-  },
-  detailBar: {
-    display: 'flex', alignItems: 'center', gap: '12px',
-    padding: '11px 14px', borderBottom: '1px solid var(--border)',
-    flexShrink: 0, background: 'var(--surface)',
-  },
-  backBtn: {
-    display: 'inline-flex', alignItems: 'center', gap: '5px',
-    padding: '7px 13px 7px 9px', borderRadius: '10px',
-    border: '1px solid var(--border)', background: 'var(--bg)',
-    color: 'var(--text)', fontSize: '13px', fontWeight: 650,
-    cursor: 'pointer', fontFamily: 'var(--font)', flexShrink: 0,
-  },
-  detailTitle: { display: 'flex', flexDirection: 'column', minWidth: 0, lineHeight: 1.25, flex: 1 },
-  detailTitleMain: { fontSize: '15px', fontWeight: 700, letterSpacing: '-0.2px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' },
-  detailTitleSub: { fontSize: '11.5px', color: 'var(--muted)', fontWeight: 500 },
-
-  // The split body: brief panel (top) + chat panel (bottom). On a tall
-  // screen they stack and the body scrolls; the chat panel keeps a sensible
-  // minimum so ChatView always has room to breathe.
-  splitBody: {
-    flex: 1, minHeight: 0, overflowY: 'auto', overflowX: 'hidden',
-    display: 'flex', flexDirection: 'column',
-  },
-  briefPanel: {
-    flexShrink: 0, display: 'flex', flexDirection: 'column',
-    borderBottom: '1px solid var(--border)',
-  },
-  briefIframe: {
-    width: '100%', border: 'none', background: 'var(--bg)', display: 'block',
-  },
-  briefLoading: {
-    minHeight: '320px', display: 'flex', flexDirection: 'column',
-    alignItems: 'center', justifyContent: 'center', gap: '12px',
-    color: 'var(--muted)', fontSize: '13px',
-  },
-  chatPanel: {
-    flexShrink: 0, display: 'flex', flexDirection: 'column',
-    background: 'var(--bg)',
-  },
-  chatHeader: {
-    display: 'flex', alignItems: 'center', gap: '8px',
-    padding: '13px 16px 9px', flexShrink: 0,
-  },
-  chatHeaderDot: {
-    width: '7px', height: '7px', borderRadius: '50%', background: ACCENT,
-    boxShadow: `0 0 0 4px ${ACCENT_DIM}`, flexShrink: 0,
-  },
-  chatHeaderText: { fontSize: '13px', fontWeight: 700, letterSpacing: '-0.1px' },
-  chatHeaderHint: { fontSize: '11.5px', color: 'var(--muted)', fontWeight: 500, marginLeft: 'auto' },
-  chatMount: { width: '100%', flex: 1, minHeight: '420px' },
-  chatResolving: {
-    padding: '20px 16px 28px', display: 'flex', alignItems: 'center', gap: '10px',
-    color: 'var(--muted)', fontSize: '12.5px',
-  },
-  noChatNote: {
-    margin: '14px 16px 22px', padding: '14px 16px', borderRadius: '13px',
-    background: 'var(--surface)', border: '1px dashed var(--border)',
-    color: 'var(--muted)', fontSize: '12.5px', lineHeight: 1.55,
-    display: 'flex', alignItems: 'flex-start', gap: '10px',
-  },
-  feedbackRow: {
-    margin: '12px 16px 18px', paddingTop: '12px',
-    borderTop: '1px solid var(--border)',
-  },
-  feedbackBtn: {
-    display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-    minHeight: '40px', padding: '8px 14px', borderRadius: '10px',
-    border: `1px solid ${ACCENT}`, background: ACCENT_DIM,
-    color: ACCENT, fontSize: '13px', fontWeight: 700,
-    cursor: 'pointer', fontFamily: 'var(--font)',
-  },
-
-  // Settings
-  settingsWrap: { maxWidth: '580px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '22px' },
-  settingsCard: {
-    background: 'var(--surface)', border: '1px solid var(--border)',
-    borderRadius: '16px', padding: '18px', display: 'flex', flexDirection: 'column', gap: '10px',
-  },
-  sectionHead: { display: 'flex', alignItems: 'center', gap: '10px' },
-  sectionIcon: {
-    width: '30px', height: '30px', borderRadius: '9px', flexShrink: 0,
-    display: 'flex', alignItems: 'center', justifyContent: 'center',
-    background: ACCENT_DIM, fontSize: '15px',
-  },
-  sectionLabel: { fontSize: '14.5px', fontWeight: 700, letterSpacing: '-0.1px', margin: 0 },
-  note: { fontSize: '12.5px', color: 'var(--muted)', margin: 0, lineHeight: 1.55 },
-  timeRow: { display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap', marginTop: '2px' },
-  timeInput: {
-    padding: '9px 12px', fontSize: '16px', fontFamily: 'var(--font)', fontWeight: 600,
-    background: 'var(--bg)', color: 'var(--text)',
-    border: '1px solid var(--border)', borderRadius: '10px',
-    outline: 'none', width: '132px',
-  },
-  customCronNote: {
-    fontSize: '12px', color: 'var(--muted)', lineHeight: 1.5,
-    padding: '10px 12px', borderRadius: '11px',
-    background: 'var(--bg)', border: '1px solid var(--border)', marginTop: '2px',
-  },
-  agentSelect: {
-    width: '100%', minHeight: '42px', padding: '9px 12px',
-    border: '1px solid var(--border)', borderRadius: '10px',
-    background: 'var(--bg)', color: 'var(--text)', fontSize: '14px',
-    fontFamily: 'var(--font)', fontWeight: 650, outline: 'none',
-  },
-  agentMeta: {
-    fontSize: '12px', color: 'var(--muted)', lineHeight: 1.5,
-    padding: '10px 12px', borderRadius: '11px',
-    background: 'var(--bg)', border: '1px solid var(--border)',
-  },
-  modelLabel: {
-    fontSize: '11px', color: 'var(--muted)', fontWeight: 750,
-    textTransform: 'uppercase', letterSpacing: '0.4px', marginTop: '4px',
-  },
-  verbList: { display: 'flex', flexDirection: 'column', gap: '8px', marginTop: '2px' },
-  verbRow: (on) => ({
-    display: 'flex', alignItems: 'flex-start', gap: '11px',
-    padding: '12px 13px', borderRadius: '12px', cursor: 'pointer',
-    background: on ? ACCENT_DIM : 'var(--bg)',
-    border: `1px solid ${on ? ACCENT : 'var(--border)'}`,
-    userSelect: 'none', transition: 'background 0.14s, border-color 0.14s',
-  }),
-  verbRadio: (on) => ({
-    width: '17px', height: '17px', borderRadius: '999px', marginTop: '1px',
-    border: `2px solid ${on ? ACCENT : 'var(--muted)'}`,
-    background: 'transparent', flexShrink: 0, position: 'relative',
-    boxShadow: on ? `inset 0 0 0 3.5px ${ACCENT}` : 'none',
-    transition: 'box-shadow .14s, border-color .14s',
-  }),
-  verbMain: { display: 'flex', flexDirection: 'column', gap: '2px', minWidth: 0 },
-  verbTitle: { fontSize: '13.5px', fontWeight: 650 },
-  verbHint: { fontSize: '12px', color: 'var(--muted)', lineHeight: 1.45 },
-  saveRow: { display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', marginTop: '2px' },
-  saveBtn: (busy) => ({
-    padding: '10px 22px', borderRadius: '12px', border: 'none',
-    background: busy ? 'var(--surface)' : ACCENT,
-    color: busy ? 'var(--muted)' : '#fff',
-    fontSize: '13.5px', fontWeight: 700, cursor: busy ? 'default' : 'pointer',
-    fontFamily: 'var(--font)', transition: 'background 0.15s, opacity .15s',
-    boxShadow: busy ? 'none' : `0 6px 18px -8px ${ACCENT}`,
-  }),
-  toast: { fontSize: '12.5px', color: 'var(--green, #3fb950)', fontWeight: 650 },
-  errorToast: { fontSize: '12.5px', color: 'var(--danger, #f85149)', fontWeight: 650 },
-  scheduleHint: {
-    fontSize: '12px', color: 'var(--muted)', lineHeight: 1.55,
-    padding: '11px 13px', borderRadius: '12px',
-    background: ACCENT_DIM, border: '1px solid var(--border)',
-    display: 'flex', alignItems: 'flex-start', gap: '8px',
-  },
-}
 
 // ---------------------------------------------------------------------------
 // Storage — raw fetch with the app token (per the data contract). JSON paths
@@ -817,8 +835,8 @@ function MorningChat({ chatId }) {
 
   if (phase === 'unavailable') {
     return (
-      <div style={S.noChatNote}>
-        <span aria-hidden="true" style={{ fontSize: '15px', lineHeight: 1.2 }}>💬</span>
+      <div className="dr-no-chat-note">
+        <span aria-hidden="true" className="dr-no-chat-glyph">💬</span>
         <span>
           The conversation about this brief isn’t available here. Open it from
           your chat list to reply.
@@ -828,14 +846,14 @@ function MorningChat({ chatId }) {
   }
 
   return (
-    <div style={{ position: 'relative' }}>
+    <div className="dr-chat-mount-wrap">
       {phase === 'mounting' && (
-        <div style={S.chatResolving}>
-          <span style={{ ...S.spinner, width: '16px', height: '16px', margin: 0, borderWidth: '2px' }} aria-hidden="true" />
+        <div className="dr-chat-resolving">
+          <span className="dr-spinner dr-spinner-sm" aria-hidden="true" />
           Opening the conversation…
         </div>
       )}
-      <div ref={mountRef} style={{ ...S.chatMount, display: phase === 'live' ? 'block' : 'none' }} />
+      <div ref={mountRef} className="dr-chat-embed" style={{ display: phase === 'live' ? 'block' : 'none' }} />
     </div>
   )
 }
@@ -855,8 +873,8 @@ function FeedbackLauncher({ dateStr, chatId }) {
     )
   }
   return (
-    <div style={S.feedbackRow}>
-      <button style={S.feedbackBtn} className="dreaming-pressable" onClick={openFeedbackChat}>
+    <div className="dr-feedback-row">
+      <button className="dr-feedback-btn dr-pressable" onClick={openFeedbackChat}>
         Give feedback on this brief
       </button>
     </div>
@@ -942,35 +960,35 @@ function ReportDetail({ dateStr, storage, online, onBack }) {
   }, [])
 
   return (
-    <div style={S.detail} className="dreaming-rise">
-      <div style={S.detailBar}>
+    <div className="dr-detail dr-rise">
+      <div className="dr-detail-bar">
         <button
-          style={S.backBtn} className="dreaming-pressable"
+          className="dr-back-btn dr-pressable"
           onClick={onBack} aria-label="Back to reports"
         >
-          <span aria-hidden="true" style={{ fontSize: '16px' }}>‹</span> Briefs
+          <span aria-hidden="true" className="dr-back-glyph">‹</span> Briefs
         </button>
-        <div style={S.detailTitle}>
-          <span style={S.detailTitleMain}>{relativeLabel(dateStr)}’s brief</span>
-          <span style={S.detailTitleSub}>{subLabel(dateStr)}</span>
+        <div className="dr-detail-title">
+          <span className="dr-detail-title-main">{relativeLabel(dateStr)}’s brief</span>
+          <span className="dr-detail-title-sub">{subLabel(dateStr)}</span>
         </div>
       </div>
 
       {state.phase === 'loading' && (
-        <div style={S.briefLoading}>
-          <span style={S.spinner} aria-hidden="true" />
+        <div className="dr-brief-loading">
+          <span className="dr-spinner" aria-hidden="true" />
           <span>Opening your brief…</span>
         </div>
       )}
 
       {state.phase === 'missing' && (
-        <div style={{ ...S.empty, paddingTop: '56px' }}>
+        <div className="dr-empty is-compact">
           This brief is no longer available.
         </div>
       )}
 
       {state.phase === 'error' && (
-        <div style={{ ...S.empty, paddingTop: '56px' }}>
+        <div className="dr-empty is-compact">
           {online
             ? 'This brief could not be loaded. Try opening it again in a moment.'
             : 'You’re offline — open this brief again once you’re back online.'}
@@ -978,11 +996,12 @@ function ReportDetail({ dateStr, storage, online, onBack }) {
       )}
 
       {state.phase === 'ready' && (
-        <div style={S.splitBody} className="dreaming-scroll">
-          <div style={S.briefPanel}>
+        <div className="dr-split-body dr-scroll">
+          <div className="dr-brief-panel">
             <iframe
               ref={iframeRef}
-              style={{ ...S.briefIframe, height: `${briefHeight}px` }}
+              className="dr-brief-iframe"
+              style={{ height: `${briefHeight}px` }}
               title={`Morning brief for ${dateStr}`}
               srcDoc={state.html}
               onLoad={onIframeLoad}
@@ -994,20 +1013,20 @@ function ReportDetail({ dateStr, storage, online, onBack }) {
             />
           </div>
 
-          <div style={S.chatPanel}>
-            <div style={S.chatHeader}>
-              <span style={S.chatHeaderDot} aria-hidden="true" />
-              <span style={S.chatHeaderText}>Morning conversation</span>
-              {chatId && <span style={S.chatHeaderHint}>tap a card or reply below</span>}
+          <div className="dr-chat-panel">
+            <div className="dr-chat-header">
+              <span className="dr-chat-header-dot" aria-hidden="true" />
+              <span className="dr-chat-header-text">Morning conversation</span>
+              {chatId && <span className="dr-chat-header-hint">tap a card or reply below</span>}
             </div>
             {chatId === undefined ? (
-              <div style={S.chatResolving}>
-                <span style={{ ...S.spinner, width: '16px', height: '16px', margin: 0, borderWidth: '2px' }} aria-hidden="true" />
+              <div className="dr-chat-resolving">
+                <span className="dr-spinner dr-spinner-sm" aria-hidden="true" />
                 Finding the conversation…
               </div>
             ) : chatId === null ? (
-              <div style={S.noChatNote}>
-                <span aria-hidden="true" style={{ fontSize: '15px', lineHeight: 1.2 }}>🌙</span>
+              <div className="dr-no-chat-note">
+                <span aria-hidden="true" className="dr-no-chat-glyph">🌙</span>
                 <span>
                   No conversation was opened for this brief — it’s a read-only
                   morning note. When a brief has questions for you, the chat
@@ -1088,8 +1107,8 @@ function ReportsList({ appId, storage, online, onOpen }) {
 
   if (phase === 'loading' && dates.length === 0) {
     return (
-      <div style={S.loadingWrap}>
-        <span style={S.spinner} aria-hidden="true" />
+      <div className="dr-loading-wrap">
+        <span className="dr-spinner" aria-hidden="true" />
         <div>Gathering last night’s dream…</div>
       </div>
     )
@@ -1097,14 +1116,14 @@ function ReportsList({ appId, storage, online, onOpen }) {
 
   if (phase === 'error' && dates.length === 0) {
     return (
-      <div style={S.errorBox}>
+      <div className="dr-error-box">
         <span>
           {online
             ? 'Couldn’t load your briefs just now.'
             : 'You’re offline and there’s nothing cached yet.'}
         </span>
         {online && (
-          <button style={S.retryBtn} className="dreaming-pressable" onClick={() => setReloadKey((k) => k + 1)}>
+          <button className="dr-retry-btn dr-pressable" onClick={() => setReloadKey((k) => k + 1)}>
             Try again
           </button>
         )}
@@ -1114,11 +1133,11 @@ function ReportsList({ appId, storage, online, onOpen }) {
 
   if (dates.length === 0) {
     return (
-      <div style={S.empty}>
-        <div style={S.emptyMoonWrap}>
-          <span style={S.emptyMoon} aria-hidden="true">🌙</span>
+      <div className="dr-empty">
+        <div className="dr-empty-mark">
+          <span className="dr-empty-mark-glyph" aria-hidden="true">🌙</span>
         </div>
-        <div style={S.emptyTitle}>No briefs yet</div>
+        <div className="dr-empty-title">No briefs yet</div>
         Dreaming runs overnight — consolidating what the day’s agents learned,
         tidying your Mind, and tending your apps. Your first morning brief will
         be waiting right here.
@@ -1127,38 +1146,37 @@ function ReportsList({ appId, storage, online, onOpen }) {
   }
 
   return (
-    <div className="dreaming-rise">
+    <div className="dr-rise">
       <StreakBar streak={streak} />
       {!online && (
-        <div style={S.offlineBanner}>
+        <div className="dr-offline-banner">
           <span aria-hidden="true">🌙</span>
           Offline — showing your last cached briefs. Tonight’s dream appears
           once you’re back online.
         </div>
       )}
-      <div style={S.list}>
+      <div className="dr-list">
         {dates.map((d, i) => (
           <button
             key={d}
-            style={S.card(i === 0)}
-            className="dreaming-card"
+            className={`dr-card${i === 0 ? ' is-latest' : ''}`}
             onClick={() => onOpen(d)}
           >
-            <div style={S.dateTile(i === 0)} aria-hidden="true">
-              <span style={S.dateTileDay}>{weekdayInitial(d)}</span>
-              <span style={S.dateTileNum}>{dayOfMonth(d)}</span>
+            <div className={`dr-date-tile${i === 0 ? ' is-latest' : ''}`} aria-hidden="true">
+              <span className="dr-date-tile-day">{weekdayInitial(d)}</span>
+              <span className="dr-date-tile-num">{dayOfMonth(d)}</span>
             </div>
-            <div style={S.cardMain}>
-              <div style={S.cardLabelRow}>
-                <span style={S.cardLabel}>{relativeLabel(d)}</span>
-                {i === 0 && <span style={S.latestPill}>Latest</span>}
+            <div className="dr-card-main">
+              <div className="dr-card-label-row">
+                <span className="dr-card-label">{relativeLabel(d)}</span>
+                {i === 0 && <span className="dr-latest-pill">Latest</span>}
               </div>
-              <span style={S.cardSub}>{subLabel(d)}</span>
+              <span className="dr-card-sub">{subLabel(d)}</span>
               {i === 0 && lastSummary && (
-                <span style={S.cardTldr}>{lastSummary}</span>
+                <span className="dr-card-tldr">{lastSummary}</span>
               )}
             </div>
-            <span style={S.cardChevron} aria-hidden="true">›</span>
+            <span className="dr-card-chevron" aria-hidden="true">›</span>
           </button>
         ))}
       </div>
@@ -1170,14 +1188,14 @@ function StreakBar({ streak }) {
   if (!streak || streak < 1) return null
   const flames = Math.min(streak, 5)
   return (
-    <div style={{ maxWidth: '660px', margin: '0 auto 16px', display: 'flex' }}>
-      <span style={{ ...S.streakBadge(false), padding: '7px 13px', fontSize: '13px' }}>
-        <span aria-hidden="true" style={{ animation: 'dreaming-drift 4s ease-in-out infinite' }}>🔥</span>
-        <strong style={{ fontWeight: 750 }}>{streak}</strong>
-        <span style={{ fontWeight: 550 }}>
+    <div className="dr-streak-bar">
+      <span className="dr-streak-badge">
+        <span aria-hidden="true" className="dr-streak-flame">🔥</span>
+        <strong className="dr-streak-num">{streak}</strong>
+        <span className="dr-streak-unit">
           {streak === 1 ? 'morning in a row' : 'mornings in a row'}
         </span>
-        <span aria-hidden="true" style={{ marginLeft: '4px', letterSpacing: '1px', opacity: 0.55, fontSize: '9px' }}>
+        <span aria-hidden="true" className="dr-streak-dots">
           {'•'.repeat(flames)}
         </span>
       </span>
@@ -1329,56 +1347,56 @@ function SettingsTab({ appId, storage, online, token }) {
 
   if (loading) {
     return (
-      <div style={S.loadingWrap}>
-        <span style={S.spinner} aria-hidden="true" />
+      <div className="dr-loading-wrap">
+        <span className="dr-spinner" aria-hidden="true" />
         <div>Loading settings…</div>
       </div>
     )
   }
 
   return (
-    <div style={S.settingsWrap} className="dreaming-rise">
-      <div style={S.settingsCard}>
-        <div style={S.sectionHead}>
-          <span style={S.sectionIcon} aria-hidden="true">⏰</span>
-          <h2 style={S.sectionLabel}>When to dream</h2>
+    <div className="dr-settings-wrap dr-rise">
+      <div className="dr-settings-card">
+        <div className="dr-section-head">
+          <span className="dr-section-icon" aria-hidden="true">⏰</span>
+          <h2 className="dr-section-label">When to dream</h2>
         </div>
-        <p style={S.note}>
+        <p className="dr-note">
           Pick the hour your morning brief should be ready. Dreaming writes it
           overnight so it’s waiting when you wake.
         </p>
         {cronIsCustom ? (
-          <div style={S.customCronNote}>
+          <div className="dr-custom-cron-note">
             You have a custom schedule set (<code>{rawCron}</code>). Pick an
             hour below to switch to a simple daily time, or leave it as-is.
-            <div style={{ ...S.timeRow, marginTop: '10px' }}>
+            <div className="dr-time-row">
               <input
                 type="time"
                 step="3600"
-                style={S.timeInput}
+                className="dr-time-input"
                 value={hourToTimeValue(hour)}
                 onChange={onTimeChange}
                 aria-label="Daily brief time"
               />
-              <span style={S.note}>on the hour, every day</span>
+              <span className="dr-note">on the hour, every day</span>
             </div>
           </div>
         ) : (
-          <div style={S.timeRow}>
+          <div className="dr-time-row">
             <input
               type="time"
               step="3600"
-              style={S.timeInput}
+              className="dr-time-input"
               value={hourToTimeValue(hour)}
               onChange={onTimeChange}
               aria-label="Daily brief time"
             />
-            <span style={S.note}>
-              ready around <strong style={{ color: 'var(--text)', fontWeight: 650 }}>{hourClockLabel(hour)}</strong>, every day
+            <span className="dr-note">
+              ready around <strong className="dr-note-strong">{hourClockLabel(hour)}</strong>, every day
             </span>
           </div>
         )}
-        <div style={S.scheduleHint}>
+        <div className="dr-schedule-hint">
           <span aria-hidden="true">💡</span>
           <span>
             Schedule changes take effect after the dreaming agent re-installs
@@ -1388,17 +1406,17 @@ function SettingsTab({ appId, storage, online, token }) {
         </div>
       </div>
 
-      <div style={S.settingsCard}>
-        <div style={S.sectionHead}>
-          <span style={S.sectionIcon} aria-hidden="true">🤖</span>
-          <h2 style={S.sectionLabel}>Who dreams</h2>
+      <div className="dr-settings-card">
+        <div className="dr-section-head">
+          <span className="dr-section-icon" aria-hidden="true">🤖</span>
+          <h2 className="dr-section-label">Who dreams</h2>
         </div>
-        <p style={S.note}>
+        <p className="dr-note">
           Pick the named agent for the overnight pass. Dreaming keeps its own
           procedure; the agent supplies provider, model, and effort.
         </p>
         <select
-          style={S.agentSelect}
+          className="dr-agent-select"
           value={agentId}
           onChange={(e) => setAgentId(e.target.value)}
           disabled={agentsPhase === 'loading' || agents.length === 0}
@@ -1415,9 +1433,9 @@ function SettingsTab({ appId, storage, online, token }) {
           ))}
         </select>
         {agentsPhase === 'error' ? (
-          <div style={S.agentMeta}>Could not load agents. The saved agent will stay unchanged.</div>
+          <div className="dr-agent-meta">Could not load agents. The saved agent will stay unchanged.</div>
         ) : (
-          <div style={S.agentMeta}>
+          <div className="dr-agent-meta">
             {(() => {
               const selected = agents.find((agent) => agent.id === agentId)
               if (!selected) return 'Builder uses the default Dreaming model settings.'
@@ -1428,13 +1446,13 @@ function SettingsTab({ appId, storage, online, token }) {
             })()}
           </div>
         )}
-        <div style={S.modelLabel}>Nightly model</div>
+        <div className="dr-model-label">Nightly model</div>
         {modelGroups === null ? (
-          <div style={S.note}>Loading models…</div>
+          <div className="dr-note">Loading models…</div>
         ) : (
           <>
             <select
-              style={S.agentSelect}
+              className="dr-agent-select"
               value={`${provider}\t${model}`}
               onChange={(e) => {
                 const [nextProvider, nextModel] = e.target.value.split('\t')
@@ -1475,7 +1493,7 @@ function SettingsTab({ appId, storage, online, token }) {
                 )
               })}
             </select>
-            <div style={S.agentMeta}>
+            <div className="dr-agent-meta">
               {(modelGroups.find((group) => group.key === provider)?.label || provider)}
               {' · '}
               {model}
@@ -1484,12 +1502,12 @@ function SettingsTab({ appId, storage, online, token }) {
         )}
       </div>
 
-      <div style={S.saveRow}>
-        <button style={S.saveBtn(saving)} className="dreaming-pressable" onClick={save} disabled={saving}>
+      <div className="dr-save-row">
+        <button className="dr-save-btn dr-pressable" onClick={save} disabled={saving}>
           {saving ? 'Saving…' : 'Save settings'}
         </button>
-        {toast && <span style={S.toast}>{toast}</span>}
-        {error && <span style={S.errorToast}>{error}</span>}
+        {toast && <span className="dr-toast">{toast}</span>}
+        {error && <span className="dr-error-toast">{error}</span>}
       </div>
     </div>
   )
@@ -1500,7 +1518,6 @@ function SettingsTab({ appId, storage, online, token }) {
 // ---------------------------------------------------------------------------
 
 export default function App({ appId, token }) {
-  useDreamingStyles()
   const [tab, setTab] = useState('reports')
   const [openDate, setOpenDate] = useState(null)
   const detailNavRef = useRef(null)
@@ -1549,37 +1566,48 @@ export default function App({ appId, token }) {
   }, [])
 
   return (
-    <div style={S.root}>
-      <div style={S.aurora} aria-hidden="true" />
-      <div style={S.header}>
-        <div style={S.titleRow}>
-          <span style={S.moonWrap} aria-hidden="true">
-            <span style={S.moon}>🌙</span>
+    <div className="dr-root">
+      <style>{CSS}</style>
+      <div className="dr-aurora" aria-hidden="true" />
+      <div className="dr-header">
+        <div className="dr-brand">
+          <span className="dr-mark" aria-hidden="true">
+            <span className="dr-mark-glyph">🌙</span>
           </span>
-          <div style={S.titleStack}>
-            <h1 style={S.title}>Dreaming</h1>
-            <span style={S.subtitle}>your overnight brief</span>
+          <div className="dr-brand-text">
+            <h1 className="dr-title">Dreaming</h1>
+            <span className="dr-subtitle">your overnight brief</span>
           </div>
         </div>
-        <div style={S.headerRight}>
+        <div className="dr-header-right">
           {headerStreak >= 1 && (
-            <span style={S.streakBadge(false)} title={`${headerStreak} mornings in a row`}>
+            <span className="dr-streak-badge" title={`${headerStreak} mornings in a row`}>
               <span aria-hidden="true">🔥</span>
               {headerStreak}
             </span>
           )}
-          <div style={S.tabs}>
-            <button style={S.tab(tab === 'reports')} onClick={() => setTab('reports')}>
+          <div className="dr-seg" role="tablist" aria-label="View">
+            <button
+              role="tab"
+              aria-selected={tab === 'reports'}
+              className={`dr-seg-btn${tab === 'reports' ? ' is-active' : ''}`}
+              onClick={() => setTab('reports')}
+            >
               Briefs
             </button>
-            <button style={S.tab(tab === 'settings')} onClick={() => { closeDetail(); setTab('settings') }}>
+            <button
+              role="tab"
+              aria-selected={tab === 'settings'}
+              className={`dr-seg-btn${tab === 'settings' ? ' is-active' : ''}`}
+              onClick={() => { closeDetail(); setTab('settings') }}
+            >
               Settings
             </button>
           </div>
         </div>
       </div>
-      <div style={S.divider} />
-      <div style={{ ...S.scroll }} className="dreaming-scroll">
+      <div className="dr-divider" />
+      <div className="dr-scroll">
         {tab === 'reports' ? (
           <>
             <ReportsList
