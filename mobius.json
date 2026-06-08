@@ -1,8 +1,8 @@
 {
   "id": "dreaming",
   "name": "Dreaming",
-  "version": "2.0.7",
-  "description": "While you sleep, M\u00f6bius dreams: it interviews the agents that worked during the day, sharpens its own skills and memory, hardens your apps, and leaves you a one-page morning brief with a feedback path into chat. Quiet nights are skipped \u2014 your streak resets when you take a night off.",
+  "version": "2.0.8",
+  "description": "While you sleep, M\u00f6bius reviews the day's work and leaves you a one-page morning brief.",
   "author": "mobius-os",
   "license": "MIT",
   "homepage": "https://github.com/mobius-os/app-dreaming",
