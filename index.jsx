@@ -40,6 +40,37 @@ const VERBOSITY_OPTIONS = [
   { id: 'chatty', label: 'Chatty', hint: 'A longer narrative with more pattern-spotting.' },
 ]
 const DEFAULT_VERBOSITY = 'standard'
+
+// Exit-code meanings for cron_outcome events (from the fetch.sh legend).
+const CRON_EXIT_LABELS = {
+  0:   'ran ok',
+  2:   'config error (no app id)',
+  3:   'config error (missing service token)',
+  5:   'skipped — a prior run still held the lock',
+  124: 'timed out',
+  127: 'runner not found',
+}
+
+function cronExitLabel(code) {
+  const n = Number(code)
+  if (n === 0) return 'ran ok'
+  if (n === 5) return 'skipped (lock held)'
+  if (n === 124) return 'timed out'
+  if (n === 2 || n === 3) return 'config error (exit ' + n + ')'
+  return 'failed (exit ' + n + ')'
+}
+
+// Guarded signal emitter for dreaming.
+function emitSignal(appId, token, name, data = {}) {
+  try {
+    const payload = { name, ts: new Date().toISOString(), ...data }
+    fetch(`/api/storage/apps/${appId}/signals.jsonl`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    }).catch(() => {})
+  } catch {}
+}
 const PROVIDER_LABELS = {
   claude: 'Claude Code',
   codex: 'OpenAI Codex',
@@ -572,6 +603,30 @@ button.dr-card { cursor: pointer; }
   touch-action: manipulation; user-select: none;
 }
 
+/* Last-night status row */
+.dr-status-row {
+  max-width: 660px; margin: 0 auto 14px; display: flex; align-items: center;
+  gap: 10px; padding: 10px 14px; border-radius: 13px;
+  border: 1px solid var(--border); background: var(--surface);
+  font-size: 12.5px; line-height: 1.45; flex-wrap: wrap;
+}
+.dr-status-dot {
+  width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0;
+}
+.dr-status-dot.ok   { background: var(--green, #3fb950); box-shadow: 0 0 0 3px rgba(63,185,80,.15); }
+.dr-status-dot.fail { background: var(--danger, #f85149); box-shadow: 0 0 0 3px rgba(248,81,73,.15); }
+.dr-status-dot.skip { background: var(--muted); }
+.dr-status-dot.none { background: var(--border); }
+.dr-status-label { flex: 1; color: var(--text); font-weight: 600; }
+.dr-status-hint  { color: var(--muted); font-size: 12px; }
+.dr-status-investigate {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 5px 12px; border-radius: 9px; border: 1px solid var(--danger, #f85149);
+  background: transparent; color: var(--danger, #f85149);
+  font-size: 12px; font-weight: 650; cursor: pointer; font-family: var(--font);
+  touch-action: manipulation; user-select: none;
+}
+
 /* Settings */
 .dr-settings-wrap { max-width: 580px; margin: 0 auto; display: flex; flex-direction: column; gap: 22px; }
 .dr-settings-card {
@@ -619,6 +674,24 @@ button.dr-card { cursor: pointer; }
   font-size: 12px; color: var(--muted); font-weight: 750;
   text-transform: uppercase; letter-spacing: 0.4px; margin-top: 4px;
 }
+.dr-textarea {
+  width: 100%; min-height: 64px; padding: 9px 12px;
+  border: 1px solid var(--border); border-radius: 10px;
+  background: var(--bg); color: var(--text); font-size: 14px;
+  font-family: var(--font); resize: vertical; line-height: 1.5;
+  box-sizing: border-box;
+}
+.dr-textarea:focus:not(:focus-visible) { outline: none; }
+.dr-verbosity-row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+.dr-verb-btn {
+  flex: 1; min-height: 44px; padding: 8px 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg); color: var(--muted);
+  font-size: 13px; font-weight: 650; cursor: pointer; font-family: var(--font);
+  transition: background .14s, border-color .14s, color .14s;
+  touch-action: manipulation; user-select: none; text-align: center;
+}
+.dr-verb-btn.is-active { border-color: ${ACCENT}; color: ${ACCENT}; background: ${ACCENT_DIM}; }
+.dr-verb-hint { font-size: 11.5px; color: var(--muted); margin-top: 4px; line-height: 1.45; }
 .dr-save-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 2px; }
 .dr-save-btn {
   padding: 10px 22px; border-radius: 12px; border: none;
@@ -928,8 +1001,9 @@ function MorningChat({ chatId }) {
   )
 }
 
-function FeedbackLauncher({ dateStr, chatId }) {
+function FeedbackLauncher({ dateStr, chatId, appId, token }) {
   const openFeedbackChat = () => {
+    emitSignal(appId, token, 'feedback_given', { date: dateStr })
     const draft = [
       `Feedback on the Dreaming brief for ${dateStr}:`,
       '',
@@ -964,7 +1038,7 @@ function FeedbackLauncher({ dateStr, chatId }) {
 // scroll regions. Beneath it, the morning chat embed.
 // ---------------------------------------------------------------------------
 
-function ReportDetail({ dateStr, storage, online, onBack }) {
+function ReportDetail({ dateStr, storage, online, onBack, appId, token }) {
   const [state, setState] = useState({ phase: 'loading', html: '' })
   const [chatId, setChatId] = useState(undefined) // undefined=resolving, null=none, string=id
   const [briefHeight, setBriefHeight] = useState(360)
@@ -993,7 +1067,10 @@ function ReportDetail({ dateStr, storage, online, onBack }) {
       if (cancelled) return
       if (res.data != null) setState({ phase: 'ready', html: hardenReportHtml(res.data) })
       else if (res.notFound) setState({ phase: 'missing', html: '' })
-      else setState({ phase: 'error', html: '' })
+      else {
+        setState({ phase: 'error', html: '' })
+        emitSignal(appId, token, 'error', { message: 'brief load failed for ' + dateStr + ' (HTTP ' + res.error + ')' })
+      }
     })()
     ;(async () => {
       const id = await storage.getReportChatId(dateStr)
@@ -1109,7 +1186,7 @@ function ReportDetail({ dateStr, storage, online, onBack }) {
             ) : (
               <MorningChat chatId={chatId} />
             )}
-            <FeedbackLauncher dateStr={dateStr} chatId={chatId} />
+            <FeedbackLauncher dateStr={dateStr} chatId={chatId} appId={appId} token={token} />
           </div>
         </div>
       )}
@@ -1301,6 +1378,98 @@ function StreakBar({ streak }) {
 }
 
 // ---------------------------------------------------------------------------
+// Last-night status row
+// ---------------------------------------------------------------------------
+//
+// Reads GET /api/admin/activity?since=<48h> (same auth pattern as other owner
+// calls in this app), filters to cron_outcome events with job=dreaming, takes
+// the most-recent one, and renders a compact status line.
+// A failure outcome shows an "Investigate" button that posts moebius:new-chat
+// with a draft asking the agent to read /data/cron-logs/dreaming.log.
+
+function LastNightStatus({ token }) {
+  const [state, setState] = React.useState({ phase: 'loading', exitCode: null, ts: null })
+
+  React.useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      try {
+        const since = new Date(Date.now() - 48 * 3600 * 1000).toISOString()
+        const res = await fetch(`/api/admin/activity?since=${encodeURIComponent(since)}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        })
+        if (!res.ok) { if (!cancelled) setState({ phase: 'unavailable' }); return }
+        const text = await res.text()
+        if (cancelled) return
+        // activity endpoint returns JSONL or a JSON array — handle both.
+        const lines = text.trim().split('\n').filter(Boolean)
+        const events = []
+        for (const line of lines) {
+          try {
+            const obj = JSON.parse(line)
+            // The endpoint may return a JSON array on some versions.
+            if (Array.isArray(obj)) { obj.forEach((e) => events.push(e)); continue }
+            events.push(obj)
+          } catch { continue }
+        }
+        // Find the most-recent cron_outcome for dreaming.
+        const dreaming = events
+          .filter((e) => e.ev === 'cron_outcome' && e.job === 'dreaming')
+          .sort((a, b) => (a.ts < b.ts ? 1 : a.ts > b.ts ? -1 : 0))
+        if (dreaming.length === 0) {
+          setState({ phase: 'none' })
+        } else {
+          const latest = dreaming[0]
+          setState({ phase: 'ready', exitCode: latest.exit_code, ts: latest.ts })
+        }
+      } catch {
+        setState({ phase: 'unavailable' })
+      }
+    })()
+    return () => { cancelled = true }
+  }, [token])
+
+  const investigate = () => {
+    const draft = [
+      'Something went wrong with the Dreaming cron job. Please investigate:',
+      '',
+      '1. Check /data/cron-logs/dreaming.log for the most recent error',
+      '2. Identify the root cause (lock, timeout, config, or agent error)',
+      '3. Propose a fix or next steps',
+    ].join('\n')
+    window.parent.postMessage({ type: 'moebius:new-chat', draft }, window.location.origin)
+  }
+
+  if (state.phase === 'loading' || state.phase === 'unavailable') return null
+
+  const isFail = state.phase === 'ready' && Number(state.exitCode) !== 0 && Number(state.exitCode) !== 5
+  const isSkip = state.phase === 'ready' && Number(state.exitCode) === 5
+  const isNone = state.phase === 'none'
+  const isOk   = state.phase === 'ready' && Number(state.exitCode) === 0
+
+  const dotClass = isOk ? 'ok' : isFail ? 'fail' : isSkip ? 'skip' : 'none'
+  const label = isNone
+    ? 'No run recorded in the last 48 hours'
+    : cronExitLabel(state.exitCode)
+  const tsLabel = state.ts
+    ? new Date(state.ts).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
+    : ''
+
+  return (
+    <div className="dr-status-row">
+      <span className={`dr-status-dot ${dotClass}`} aria-hidden="true" />
+      <span className="dr-status-label">{label}</span>
+      {tsLabel && <span className="dr-status-hint">{tsLabel}</span>}
+      {isFail && (
+        <button className="dr-status-investigate dr-pressable" onClick={investigate}>
+          Investigate
+        </button>
+      )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Settings
 // ---------------------------------------------------------------------------
 
@@ -1310,6 +1479,9 @@ function SettingsTab({ appId, storage, online, token }) {
   const [settingsExtra, setSettingsExtra] = useState({})
   const [provider, setProvider] = useState(DEFAULT_PROVIDER)
   const [model, setModel] = useState(DEFAULT_MODEL)
+  const [verbosity, setVerbosity] = useState(DEFAULT_VERBOSITY)
+  const [focus, setFocus] = useState('')
+  const [avoid, setAvoid] = useState('')
   const [modelGroups, setModelGroups] = useState(null)
   const [connectedProviders, setConnectedProviders] = useState(null)
   // The raw cron we loaded — when it's a custom shape parseCronHour can't
@@ -1351,6 +1523,10 @@ function SettingsTab({ appId, storage, online, token }) {
         if (typeof s.model === 'string' && s.model.trim()) {
           setModel(s.model.trim())
         }
+        const vOpt = VERBOSITY_OPTIONS.find((o) => o.id === s.verbosity)
+        if (vOpt) setVerbosity(vOpt.id)
+        if (typeof s.focus === 'string') setFocus(s.focus)
+        if (typeof s.avoid === 'string') setAvoid(s.avoid)
       }
       // res.notFound (first run) -> keep the 06:00 / standard defaults.
       setLoading(false)
@@ -1403,6 +1579,9 @@ function SettingsTab({ appId, storage, online, token }) {
         provider: provider || settingsExtra.provider || DEFAULT_PROVIDER,
         model: model || settingsExtra.model || null,
         effort: settingsExtra.effort ?? null,
+        verbosity,
+        focus: focus.trim() || null,
+        avoid: avoid.trim() || null,
       })
       setToast('Saved ✓')
       setTimeout(() => setToast(''), 2600)
@@ -1411,7 +1590,7 @@ function SettingsTab({ appId, storage, online, token }) {
     } finally {
       setSaving(false)
     }
-  }, [saving, cronIsCustom, rawCron, hour, excludeApps, provider, model, settingsExtra, storage, online])
+  }, [saving, cronIsCustom, rawCron, hour, excludeApps, provider, model, verbosity, focus, avoid, settingsExtra, storage, online])
 
   if (loading) {
     return (
@@ -1540,6 +1719,63 @@ function SettingsTab({ appId, storage, online, token }) {
         )}
       </div>
 
+      <div className="dr-settings-card">
+        <div className="dr-section-head">
+          <span className="dr-section-icon" aria-hidden="true">📝</span>
+          <h2 className="dr-section-label">Brief style</h2>
+        </div>
+        <p className="dr-note">
+          How long and how detailed you'd like the morning brief. The dreaming
+          skill honors this when writing tonight's report.
+        </p>
+        <div className="dr-verbosity-row">
+          {VERBOSITY_OPTIONS.map((opt) => (
+            <button
+              key={opt.id}
+              className={`dr-verb-btn${verbosity === opt.id ? ' is-active' : ''} dr-pressable`}
+              onClick={() => setVerbosity(opt.id)}
+              aria-pressed={verbosity === opt.id}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+        <p className="dr-verb-hint">
+          {VERBOSITY_OPTIONS.find((o) => o.id === verbosity)?.hint}
+        </p>
+      </div>
+
+      <div className="dr-settings-card">
+        <div className="dr-section-head">
+          <span className="dr-section-icon" aria-hidden="true">🧭</span>
+          <h2 className="dr-section-label">Tonight's steering</h2>
+        </div>
+        <p className="dr-note">
+          Optional nudges the dreaming agent reads before deciding what to cover.
+          Leave blank to let it choose freely.
+        </p>
+        <label className="dr-note" style={{ display: 'block', marginBottom: 4 }}>
+          <span className="dr-note-strong">Prioritise</span> — topics or apps to pay extra attention to
+        </label>
+        <textarea
+          className="dr-textarea"
+          value={focus}
+          onChange={(e) => setFocus(e.target.value)}
+          placeholder={'e.g. "look for regressions in the Habits app" or "I\'ve been researching climate policy"'}
+          aria-label="Topics to prioritise tonight"
+        />
+        <label className="dr-note" style={{ display: 'block', marginTop: 10, marginBottom: 4 }}>
+          <span className="dr-note-strong">Skip</span> — topics or apps to leave out of tonight's brief
+        </label>
+        <textarea
+          className="dr-textarea"
+          value={avoid}
+          onChange={(e) => setAvoid(e.target.value)}
+          placeholder={'e.g. "skip the workout app" or "don\'t mention work projects"'}
+          aria-label="Topics to skip tonight"
+        />
+      </div>
+
       <div className="dr-save-row">
         <button className="dr-save-btn dr-pressable" onClick={save} disabled={saving}>
           {saving ? 'Saving…' : 'Save settings'}
@@ -1561,6 +1797,7 @@ export default function App({ appId, token }) {
   const detailNavRef = useRef(null)
   const online = useOnline()
   const storage = useMemo(() => makeStorage(appId, token), [appId, token])
+  const appReadyFiredRef = useRef(false)
 
   // Surface the streak in the header on the reports tab. We read it once
   // here (cheap, cached) so the badge is present even before the list
@@ -1574,9 +1811,14 @@ export default function App({ appId, token }) {
       if (res.data && Number.isFinite(res.data.streak)) {
         setHeaderStreak(res.data.streak)
       }
+      // app_ready fires once after the initial state load (whether empty or not).
+      if (!appReadyFiredRef.current) {
+        appReadyFiredRef.current = true
+        emitSignal(appId, token, 'app_ready')
+      }
     })()
     return () => { cancelled = true }
-  }, [storage, appId])
+  }, [storage, appId, token])
 
   const closeDetail = useCallback(() => {
     try { detailNavRef.current?.close?.() } catch {}
@@ -1596,8 +1838,9 @@ export default function App({ appId, token }) {
       await handle.ready?.catch(() => false)
       if (detailNavRef.current !== handle) return
     }
+    emitSignal(appId, token, 'brief_opened', { date: dateStr })
     setOpenDate(dateStr)
-  }, [])
+  }, [appId, token])
 
   useEffect(() => () => {
     try { detailNavRef.current?.close?.() } catch {}
@@ -1648,6 +1891,8 @@ export default function App({ appId, token }) {
       <div className="dr-scroll">
         {tab === 'reports' ? (
           <>
+            {/* Last-night status row — shows most recent cron_outcome for dreaming */}
+            <LastNightStatus token={token} />
             <ReportsList
               appId={appId}
               storage={storage}
@@ -1660,6 +1905,8 @@ export default function App({ appId, token }) {
                 storage={storage}
                 online={online}
                 onBack={closeDetail}
+                appId={appId}
+                token={token}
               />
             )}
           </>

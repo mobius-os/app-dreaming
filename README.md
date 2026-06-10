@@ -2,7 +2,7 @@
 
 The nightly self-improvement loop for [Möbius](https://github.com/mobius-os). While you sleep, Möbius *dreams*: a real agent wakes up with the whole night ahead of it and does the slow, deferred work the daytime agent never has time for. In the morning it hands you a one-page brief and a short conversation with a few decisions to tap through over coffee.
 
-Quiet nights are skipped. If nothing meaningful happened, the dreamer takes the night off and your streak resets to zero.
+The dreamer always ships a brief, even on quiet nights — Möbius's dreaming skill mandates a brief every run.
 
 ## Install
 
@@ -47,7 +47,7 @@ Schedule changes take effect within 10 minutes (the cron sync runs every 10). Ho
 
 ## Streak
 
-The streak counts consecutive days the dreamer found meaningful Möbius activity to dream about. A night off resets it to zero; the next active day starts at 1. It deliberately is not a "days the app ran" counter — that would reward leaving Möbius open, not engaging with it.
+The streak counts consecutive days a brief was produced. The dreaming skill mandates a brief every run, so the streak grows each night Dreaming ran and is never reset by a "quiet" night — only by a run that actually failed or was skipped (lock-held or config error).
 
 ## License
 
