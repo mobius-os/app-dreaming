@@ -528,11 +528,13 @@ button.dr-card { cursor: pointer; }
 /* /mobius-ui:Segmented */
 
 /* mobius-ui:ChatEmbed v1 — keep in sync; library candidate. Diverge below the marker only. */
-.dr-chat-embed { width: 100%; flex: 1; }
-/* Reserve the tall mount height only once the live chat is shown (the mount
-   node is display:none while mounting); reserving it during the spinner phase
-   left a blank gap below "Opening the conversation…". */
-.dr-chat-embed[style*="block"] { min-height: 420px; }
+.dr-chat-embed {
+  flex: 1 1 auto;
+  min-height: 0;   /* the flexbox overflow fix — lets the iframe scroll internally */
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg);
+}
 .dr-chat-embed iframe { display: block; width: 100%; height: 100%; border: 0; }
 /* /mobius-ui:ChatEmbed */
 
@@ -687,8 +689,24 @@ button.dr-card { cursor: pointer; }
   align-items: center; justify-content: center; gap: 12px;
   color: var(--muted); font-size: 13px;
 }
-.dr-chat-mount-wrap { position: relative; }
+.dr-chat-mount-wrap {
+  position: relative;
+  flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column;
+}
 .dr-chat-panel { flex-shrink: 0; display: flex; flex-direction: column; background: var(--bg); }
+/* With a live conversation the panel takes a real share of the viewport
+   (the house bottom-chat-pane model; cf. app-latex's 50/50 split). The chain
+   must keep every height DEFINITE: panel 60dvh → mount-wrap flex:1 → embed
+   flex:1 → iframe height:100%. If no ancestor has a definite height, the
+   iframe's height:100% resolves to auto and the chat collapses to the ~150px
+   iframe intrinsic default, leaving a dead band of empty wrapper below the
+   composer. Viewport units, not a percentage: a % height here resolves
+   against the scroll column and Chrome treats it as auto (content-sized),
+   silently re-creating the collapsed chat. While resolving / chatless the
+   panel stays content-sized so the spinner and the no-chat note don't
+   reserve blank space. */
+.dr-chat-panel.is-live { height: 60vh; height: 60dvh; min-height: 340px; }
 .dr-chat-header { display: flex; align-items: center; gap: 8px; padding: 13px 16px 9px; flex-shrink: 0; }
 .dr-chat-header-dot {
   width: 7px; height: 7px; border-radius: 50%; background: ${ACCENT};
@@ -707,7 +725,13 @@ button.dr-card { cursor: pointer; }
   display: flex; align-items: flex-start; gap: 10px;
 }
 .dr-no-chat-glyph { font-size: 15px; line-height: 1.2; }
-.dr-feedback-row { margin: 16px 16px 22px; padding-top: 14px; border-top: 1px solid var(--border); }
+/* Sits flush under the embedded chat's composer — the border is the only
+   separation, so there is no dead band between the chat and the button. */
+.dr-feedback-row {
+  flex-shrink: 0; margin: 0 16px;
+  padding: 12px 0 max(14px, env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border);
+}
 .dr-feedback-btn {
   display: flex; align-items: center; justify-content: center; gap: 7px;
   width: 100%; min-height: 46px; padding: 11px 16px; border-radius: 12px;
@@ -1059,9 +1083,13 @@ function useOnline() {
 // never leak the nested iframe.
 // ---------------------------------------------------------------------------
 
-function MorningChat({ chatId }) {
+function MorningChat({ chatId, onPhase }) {
   const mountRef = useRef(null)
-  const [phase, setPhase] = useState('mounting') // mounting | live | unavailable
+  const [phase, setPhaseState] = useState('mounting') // mounting | live | unavailable
+  // The parent sizes the chat panel from the phase — a live chat gets a real
+  // viewport share; the spinner and fallback states stay content-sized — so
+  // every transition is mirrored upward.
+  const setPhase = (p) => { setPhaseState(p); if (onPhase) onPhase(p) }
 
   useEffect(() => {
     const mount = mountRef.current
@@ -1153,14 +1181,17 @@ function FeedbackLauncher({ dateStr, chatId, appId, token }) {
 // iframe has a null origin so its scripts cannot access the parent's DOM,
 // localStorage, or owner JWT (the security risk of allow-same-origin+scripts).
 // hardenReportHtml injects a tiny height-reporter script that postMessages
-// the content height to the parent. The parent sizes the iframe from those messages
-// so the page scrolls as one column (brief, then chat) without nesting two
-// scroll regions. Beneath it, the morning chat embed.
+// the content height to the parent. The parent sizes the iframe from those
+// messages so the brief reads as one scrolled column. Beneath it, the morning
+// chat panel: once live it takes a fixed share of the viewport and the
+// embedded ChatView scrolls internally with its composer pinned at the
+// panel's bottom (see the .dr-chat-panel.is-live CSS for the height chain).
 // ---------------------------------------------------------------------------
 
 function ReportDetail({ dateStr, storage, online, onBack, appId, token }) {
   const [state, setState] = useState({ phase: 'loading', html: '' })
   const [chatId, setChatId] = useState(undefined) // undefined=resolving, null=none, string=id
+  const [chatPhase, setChatPhase] = useState('mounting') // mirrors MorningChat's phase
   const [briefHeight, setBriefHeight] = useState(360)
   const [reloadKey, setReloadKey] = useState(0)
   const iframeRef = useRef(null)
@@ -1181,6 +1212,7 @@ function ReportDetail({ dateStr, storage, online, onBack, appId, token }) {
     let cancelled = false
     setState({ phase: 'loading', html: '' })
     setChatId(undefined)
+    setChatPhase('mounting')
     setBriefHeight(360)
     ;(async () => {
       const res = await storage.getReportHtml(`${dateStr}.html`)
@@ -1291,7 +1323,7 @@ function ReportDetail({ dateStr, storage, online, onBack, appId, token }) {
             />
           </div>
 
-          <div className="dr-chat-panel">
+          <div className={`dr-chat-panel${chatId && chatPhase === 'live' ? ' is-live' : ''}`}>
             <div className="dr-chat-header">
               <span className="dr-chat-header-dot" aria-hidden="true" />
               <span className="dr-chat-header-text">Morning conversation</span>
@@ -1312,7 +1344,7 @@ function ReportDetail({ dateStr, storage, online, onBack, appId, token }) {
                 </span>
               </div>
             ) : (
-              <MorningChat chatId={chatId} />
+              <MorningChat chatId={chatId} onPhase={setChatPhase} />
             )}
             <FeedbackLauncher dateStr={dateStr} chatId={chatId} appId={appId} token={token} />
           </div>
