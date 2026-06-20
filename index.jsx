@@ -1403,7 +1403,7 @@ function FeedbackLauncher({ dateStr, chatId, appId, token }) {
   const openDiscussionChat = () => {
     emitSignal(appId, token, 'feedback_given', { date: dateStr })
     const draft = [
-      `About the Dreaming brief for ${dateStr}:`,
+      `About the Reflection brief for ${dateStr}:`,
       '',
       '',
     ].join('\n')
@@ -1762,8 +1762,8 @@ function ReportsList({ appId, storage, online, onOpen }) {
           <span className="dr-empty-mark-glyph" aria-hidden="true">🌙</span>
         </div>
         <div className="dr-empty-title">No briefs yet</div>
-        Dreaming runs overnight — consolidating what the day’s agents learned,
-        tidying your Mind, and tending your apps. Your first morning brief will
+        Reflection runs overnight — consolidating what the day’s agents learned,
+        tidying your Memory, and tending your apps. Your first morning brief will
         be waiting right here.
       </div>
     )
@@ -1881,7 +1881,7 @@ function LastNightStatus({ token }) {
 
   const investigate = () => {
     const draft = [
-      'Something went wrong with the Dreaming cron job. Please investigate:',
+      'Something went wrong with the Reflection cron job. Please investigate:',
       '',
       '1. Check /data/cron-logs/dreaming.log for the most recent error',
       '2. Identify the root cause (lock, timeout, config, or agent error)',
@@ -2059,7 +2059,7 @@ function SettingsTab({ appId, storage, online, token }) {
           <h2 className="dr-section-label">When to dream</h2>
         </div>
         <p className="dr-note">
-          Pick the hour your morning brief should be ready. Dreaming writes it
+          Pick the hour your morning brief should be ready. Reflection writes it
           overnight so it’s waiting when you wake.
         </p>
         {cronIsCustom ? (
@@ -2109,7 +2109,7 @@ function SettingsTab({ appId, storage, online, token }) {
           <h2 className="dr-section-label">Nightly model</h2>
         </div>
         <p className="dr-note">
-          The model Dreaming uses for the overnight pass. It runs its own
+          The model Reflection uses for the overnight pass. It runs its own
           procedure with the default skill.
         </p>
         {modelGroups === null ? (
@@ -2117,7 +2117,7 @@ function SettingsTab({ appId, storage, online, token }) {
         ) : modelGroups.length === 0 ? (
           // Models API unavailable — fall back to letting the CLI choose.
           <div className="dr-note">
-            Model list unavailable. Dreaming will use the CLI's default model
+            Model list unavailable. Reflection will use the CLI's default model
             for your account.
           </div>
         ) : (
@@ -2134,7 +2134,7 @@ function SettingsTab({ appId, storage, online, token }) {
                   setModel(nextModel)
                 }
               }}
-              aria-label="Dreaming model"
+              aria-label="Reflection model"
             >
               <option value={`${provider}\t`}>Provider default</option>
               {modelGroups.map((group) => {
