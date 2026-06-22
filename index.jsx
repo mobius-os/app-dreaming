@@ -989,6 +989,9 @@ button.dr-card { cursor: pointer; }
 .dr-rq--answered .dr-rq__done {
   margin-top: 14px; font-size: 12.5px; color: var(--muted); line-height: 1.5;
 }
+.dr-rq__error {
+  margin-top: 10px; font-size: 12.5px; color: var(--danger, #f85149); line-height: 1.5;
+}
 
 @media (prefers-reduced-motion: reduce) {
   .dr-rise, .dr-empty-mark-glyph, .dr-streak-flame { animation: none !important; }
@@ -1286,13 +1289,44 @@ function MorningChat({ chatId, onPhase }) {
 // QuestionCard's shape ({question, header, multiSelect, options:[{label,
 // description}]}) but is a single-file, install-safe copy — no sibling
 // imports, no streaming/answeredMap plumbing. Collects an answer per question;
-// on submit calls onAnswer({ "<question text>": "<chosen label(s)>" }) and
-// flips to a local "answered" state. The caller persists the answers for the
-// NEXT run (not a live agent) — the note copy says so. Mirrors the News app's
+// on submit it persists { "<question text>": "<chosen label(s)>" } to
+// question-answers/<date>.json for the NEXT run (not a live agent) and flips to
+// "answered" ONLY once that write is durable. It also pre-seeds the answered
+// state from the same record on open, so a reopened brief shows the done state
+// rather than a fresh re-submittable form. Mirrors the News app's
 // ReportQuestions (app-news/index.jsx) so the two apps read the same.
-function ReportQuestions({ questions, onAnswer }) {
+function ReportQuestions({ questions, storage, dateStr, appId, token }) {
   const [picks, setPicks] = useState({})        // question INDEX -> label | [labels]
   const [answered, setAnswered] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState('')
+  // `answered` cannot start false-then-flip-on-read: a fresh form briefly
+  // visible before the pre-seed lands invites a duplicate submit. Gate the
+  // form behind a one-time seed check so a reopened, already-answered card
+  // never shows an empty re-submittable form.
+  const [seeding, setSeeding] = useState(true)
+
+  // Pre-seed answered state from the persisted record so reopening a brief
+  // whose questions were already answered shows the done state, not a fresh
+  // form. The record is keyed by the REPORT date (one answer set per brief);
+  // its presence IS the "answered" signal. Re-runs when the date changes so
+  // navigating between briefs reseeds correctly. A read failure leaves the
+  // form interactive (lenient read: never block answering on a flaky get).
+  useEffect(() => {
+    let live = true
+    setSeeding(true)
+    ;(async () => {
+      try {
+        const res = await storage.getJSON(`question-answers/${dateStr}.json`)
+        if (live && res && res.data && typeof res.data === 'object') {
+          setAnswered(true)
+        }
+      } finally {
+        if (live) setSeeding(false)
+      }
+    })()
+    return () => { live = false }
+  }, [storage, dateStr])
 
   if (!Array.isArray(questions) || questions.length === 0) return null
 
@@ -1319,15 +1353,42 @@ function ReportQuestions({ questions, onAnswer }) {
     })
   }
 
-  const submit = () => {
-    if (!allAnswered || answered) return
+  const submit = async () => {
+    if (!allAnswered || answered || saving) return
     const answers = {}
     questions.forEach((q, qi) => {
       const p = picks[qi]
       answers[q.question] = Array.isArray(p) ? p.join(', ') : (p || '')
     })
-    setAnswered(true)
-    onAnswer?.(answers)
+    const body = {
+      report_date: dateStr,
+      answered_at: new Date().toISOString(),
+      answers,
+      questions,
+    }
+    setSaving(true)
+    setError('')
+    try {
+      // Bare object on a .json path -> stored as-is (no envelope). putJSON
+      // resolves only on a SYNCED server write and throws on a queued-offline
+      // or HTTP failure, so awaiting it is the durability gate: answered flips
+      // only once the next-run agent can actually read the answers. Keyed by
+      // the REPORT date so a re-open overwrites rather than piling duplicates.
+      await storage.putJSON(`question-answers/${dateStr}.json`, body)
+      setAnswered(true)
+      emitSignal(appId, token, 'feedback_given', { date: dateStr, signal: 'questions' })
+    } catch {
+      // Keep the form interactive and surface retry — never claim "Saved" on a
+      // write that didn't land. A queued-offline write throws here too, so the
+      // copy distinguishes offline from a server error.
+      setError(
+        navigator.onLine === false
+          ? 'You’re offline — reconnect to send these answers.'
+          : 'Could not save your answers — tap to try again.'
+      )
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -1380,14 +1441,17 @@ function ReportQuestions({ questions, onAnswer }) {
       {answered ? (
         <div className="dr-rq__done">Saved — I’ll use this for tomorrow night’s dream.</div>
       ) : (
-        <button
-          type="button"
-          className="dr-rq__submit dr-pressable"
-          onClick={submit}
-          disabled={!allAnswered}
-        >
-          Save for next time
-        </button>
+        <>
+          <button
+            type="button"
+            className="dr-rq__submit dr-pressable"
+            onClick={submit}
+            disabled={!allAnswered || saving || seeding}
+          >
+            {saving ? 'Saving…' : 'Save for next time'}
+          </button>
+          {error && <div className="dr-rq__error" role="alert">{error}</div>}
+        </>
       )}
     </div>
   )
@@ -1592,24 +1656,16 @@ function ReportDetail({ dateStr, storage, online, onBack, appId, token }) {
               before srcDoc, so these taps are the interactive surface. Answers
               persist to question-answers/<date>.json for the NEXT run — no live
               agent waits (a background AskUserQuestion would park a future a
-              server reset orphans). */}
+              server reset orphans). The card owns its own durable write so it
+              can await the result, flip to "Saved" only on a synced write, and
+              re-seed the answered state from storage when the brief reopens. */}
           {questions.length > 0 && (
             <ReportQuestions
               questions={questions}
-              onAnswer={(answers) => {
-                const body = {
-                  report_date: dateStr,
-                  answered_at: new Date().toISOString(),
-                  answers,
-                  questions,
-                }
-                // Bare object on a .json path -> stored as-is (no envelope).
-                // putJSON routes through the offline runtime, so a tap made
-                // offline queues and drains on reconnect. Keyed by the REPORT
-                // date so a re-open overwrites rather than piling duplicates.
-                Promise.resolve(storage.putJSON(`question-answers/${dateStr}.json`, body)).catch(() => {})
-                emitSignal(appId, token, 'feedback_given', { date: dateStr, signal: 'questions' })
-              }}
+              storage={storage}
+              dateStr={dateStr}
+              appId={appId}
+              token={token}
             />
           )}
 
