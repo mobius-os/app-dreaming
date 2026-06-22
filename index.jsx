@@ -356,28 +356,6 @@ export function extractReportQuestions(html) {
   return { html: out, questions }
 }
 
-// Durability check for the answers re-read. window.mobius.storage.set() resolves
-// {synced:true} even for a write the server FATALLY rejected: the runtime
-// dead-letters a poison op and reports {synced} though the server refused it
-// ("no consumer reads this flag" — mobius-runtime.js settle()). A 413 (per-app
-// quota / oversize body), 400/415 (bad path/MIME), or 403 (ownership) reject
-// thus looks "saved." The ONLY honest durability signal under that contract is a
-// RE-READ: the same drain that dead-letters the op also CAS-reconciles the local
-// mirror back to the server's value, so a get() after the set() returns what the
-// server actually holds — NOT the rejected answers. This returns true iff the
-// re-read payload reflects every answer we wrote (and the brief's date), so the
-// card flips to "Saved" only when the next-run agent can actually read them.
-export function answersLanded(stored, expected) {
-  if (!stored || typeof stored !== 'object') return false
-  if (stored.report_date !== expected.report_date) return false
-  const a = stored.answers
-  const e = expected.answers
-  if (!a || typeof a !== 'object' || !e || typeof e !== 'object') return false
-  // Every answer we wrote must be present and equal in the stored copy. Extra
-  // keys server-side are fine; a missing or mismatched one is a non-durable write.
-  return Object.keys(e).every((k) => a[k] === e[k])
-}
-
 // "0 6 * * *" -> "06:00" for the <input type="time"> value.
 function hourToTimeValue(hour) {
   return `${String(hour).padStart(2, '0')}:00`
@@ -953,6 +931,22 @@ button.dr-card { cursor: pointer; }
 }
 .dr-toast { font-size: 12.5px; color: var(--green, #3fb950); font-weight: 650; }
 .dr-error-toast { font-size: 12.5px; color: var(--danger, #f85149); font-weight: 650; }
+/* Dead-letter banner: a previously-"Saved" offline write the server later
+   refused on drain. Lives at the app root (the originating form is usually
+   unmounted by drain time) and reads as an honest retraction, not a toast. */
+.dr-deadletter {
+  display: flex; align-items: flex-start; gap: 10px;
+  margin: 14px 20px 0; padding: 11px 13px;
+  border-radius: 12px;
+  font-size: 12.5px; line-height: 1.5; color: var(--danger, #f85149);
+  background: var(--surface); border: 1px solid var(--danger, #f85149);
+}
+.dr-deadletter__x {
+  flex: none; margin-left: auto; border: none; background: none;
+  color: var(--muted); font-size: 16px; line-height: 1;
+  padding: 0 2px; cursor: pointer;
+  touch-action: manipulation; user-select: none;
+}
 .dr-schedule-hint {
   font-size: 12px; color: var(--muted); line-height: 1.55;
   padding: 11px 13px; border-radius: 12px;
@@ -1039,7 +1033,7 @@ button.dr-card { cursor: pointer; }
 // it apart from a network failure (`error`) and treat each correctly.
 // ---------------------------------------------------------------------------
 
-function makeStorage(appId, token) {
+export function makeStorage(appId, token) {
   const ms = (typeof window !== 'undefined' && window.mobius && window.mobius.storage) || null
   const headers = { Authorization: `Bearer ${token}` }
   const base = `/api/storage/apps/${appId}`
@@ -1060,24 +1054,29 @@ function makeStorage(appId, token) {
     }
   }
 
+  // The honest save. durableWrite RESOLVES { durability:'synced'|'queued' } —
+  // BOTH are durable: 'synced' is server-accepted, 'queued' is outboxed offline
+  // with a guaranteed retry (NOT a failure). It REJECTS a DurableWriteError only
+  // when the server FATALLY refuses the write (413 quota / 400 / 403): that
+  // rejection is the truth the old re-read dance had to reconstruct, so we let it
+  // propagate to the caller, which turns it into an error instead of "Saved".
   async function putJSON(path, obj) {
-    if (ms && typeof ms.set === 'function') {
-      // set() resolves to {synced} on a real server write and {queued} when
-      // the write only landed in the offline outbox. A queued write is NOT a
-      // saved setting yet — the cron reads settings.json from the server, so a
-      // queued-only write would let the picker claim "Saved ✓" while the
-      // nightly run keeps the old schedule. Surface it so the caller can warn.
-      const res = await ms.set(path, obj)
-      if (res && res.queued) throw new Error(`PUT ${path} queued offline`)
-      return true
+    const dw = (typeof window !== 'undefined' && window.mobius && window.mobius.durableWrite) || null
+    if (dw) {
+      // Resolve (synced OR queued) = durable success; a fatal reject throws
+      // DurableWriteError, which the call site catches and surfaces as an error.
+      return await dw(path, obj)
     }
+    // Standalone fallback (no window.mobius bridge): a raw PUT, throwing on any
+    // non-2xx so the caller treats it exactly like a fatal durableWrite reject.
+    // Return the same { durability } shape so callers never special-case the path.
     const r = await fetch(`${base}/${path}`, {
       method: 'PUT',
       headers: { ...headers, 'Content-Type': 'application/json' },
       body: JSON.stringify(obj),
     })
     if (!r.ok) throw new Error(`PUT ${path} failed (${r.status})`)
-    return true
+    return { durability: 'synced', path }
   }
 
   async function getReportHtml(name) {
@@ -1313,8 +1312,9 @@ function MorningChat({ chatId, onPhase }) {
 // imports, no streaming/answeredMap plumbing. Collects an answer per question;
 // on submit it persists { "<question text>": "<chosen label(s)>" } to
 // question-answers/<date>.json for the NEXT run (not a live agent) and flips to
-// "answered" ONLY once a RE-READ confirms the write landed (set() reports
-// {synced} even for a server-rejected write — see answersLanded). It also
+// "answered" only once durableWrite resolves a durable outcome (synced or
+// queued); a fatal server refusal rejects, so it never claims "Saved" falsely.
+// It also
 // pre-seeds the answered state from the same record on open, so a reopened
 // brief shows the done state rather than a fresh re-submittable form. Mirrors
 // the News app's ReportQuestions (app-news/index.jsx) so the two apps read the same.
@@ -1393,31 +1393,21 @@ function ReportQuestions({ questions, storage, dateStr, appId, token }) {
     setError('')
     const path = `question-answers/${dateStr}.json`
     try {
-      // Bare object on a .json path -> stored as-is (no envelope). putJSON
-      // resolves on a SYNCED server write and throws on a queued-offline write,
-      // but {synced} ALONE is not proof of durability: the runtime dead-letters
-      // a fatally-rejected write (413/400/415/403) yet still reports {synced}
-      // (mobius-runtime.js settle()). Keyed by the REPORT date so a re-open
-      // overwrites rather than piling duplicates.
+      // Bare object on a .json path -> stored as-is (no envelope). Keyed by the
+      // REPORT date so a re-open overwrites rather than piling duplicates.
+      // durableWrite resolves only on a durable outcome: 'synced' (server
+      // accepted) or 'queued' (outboxed offline, guaranteed retry) — both mean
+      // the next-run agent will be able to read these answers. A fatal server
+      // refusal (413/400/403) REJECTS here, so we never flip to "Saved" over a
+      // write the server threw away. This is the honest signal the old re-read
+      // gate had to reconstruct, now built into the write itself.
       await storage.putJSON(path, body)
-      // RE-READ is the true durability gate. The drain that dead-letters a
-      // rejected op also reconciles the local mirror to the server's value, so
-      // this get() returns what the server actually holds. Only flip to "Saved"
-      // / emit feedback_given once the stored payload reflects the answers we
-      // wrote — otherwise the next-run agent would have nothing to read.
-      const res = await storage.getJSON(path)
-      if (!res || !answersLanded(res.data, body)) {
-        // The write did not land durably (fatal reject dead-lettered, or the
-        // re-read errored/returned stale). Treat exactly like a failed write:
-        // keep the form interactive and surface retry, never claim "Saved".
-        throw new Error('answers did not persist')
-      }
       setAnswered(true)
       emitSignal(appId, token, 'feedback_given', { date: dateStr, signal: 'questions' })
     } catch {
-      // Keep the form interactive and surface retry — never claim "Saved" on a
-      // write that didn't land. A queued-offline write throws here too, so the
-      // copy distinguishes offline from a server error.
+      // A fatal DurableWriteError lands here. Keep the form interactive and
+      // surface retry — never claim "Saved" on a write the server refused. (An
+      // offline write does NOT reach this branch: it resolves 'queued'.)
       setError(
         navigator.onLine === false
           ? 'You’re offline — reconnect to send these answers.'
@@ -2016,7 +2006,7 @@ function LastNightStatus({ token }) {
 // Settings
 // ---------------------------------------------------------------------------
 
-function SettingsTab({ appId, storage, online, token }) {
+function SettingsTab({ appId, storage, token }) {
   const [hour, setHour] = useState(DEFAULT_HOUR)
   const [excludeApps, setExcludeApps] = useState([])
   const [settingsExtra, setSettingsExtra] = useState({})
@@ -2112,6 +2102,12 @@ function SettingsTab({ appId, storage, online, token }) {
     // otherwise write the standard "0 <h> * * *".
     const cron = cronIsCustom ? rawCron : buildCron(hour)
     try {
+      // durableWrite resolves on a durable outcome — 'synced' (server accepted)
+      // or 'queued' (outboxed offline, guaranteed retry). Both are genuinely
+      // saved, so either flips the picker to "Saved ✓": a queued schedule WILL
+      // reach the server, and if the queue ever fatally fails on drain,
+      // onDeadLetter (wired on App mount) surfaces that asynchronously. Only a
+      // fatal server refusal (413/400/403) rejects, dropping into catch below.
       await storage.putJSON('settings.json', {
         ...settingsExtra,
         cron,
@@ -2129,11 +2125,13 @@ function SettingsTab({ appId, storage, online, token }) {
       setToast('Saved ✓')
       setTimeout(() => setToast(''), 2600)
     } catch {
-      setError(online ? 'Could not save — try again.' : 'You’re offline — reconnect to save.')
+      // A fatal DurableWriteError (the server refused the write) — never a mere
+      // outage, which would have resolved 'queued'. Surface a plain save error.
+      setError('Could not save — try again.')
     } finally {
       setSaving(false)
     }
-  }, [saving, cronIsCustom, rawCron, hour, excludeApps, provider, model, verbosity, focus, avoid, settingsExtra, storage, online])
+  }, [saving, cronIsCustom, rawCron, hour, excludeApps, provider, model, verbosity, focus, avoid, settingsExtra, storage])
 
   if (loading) {
     return (
@@ -2341,6 +2339,23 @@ export default function App({ appId, token }) {
   const online = useOnline()
   const storage = useMemo(() => makeStorage(appId, token), [appId, token])
   const appReadyFiredRef = useRef(false)
+  // A save can resolve 'queued' (durably outboxed offline) and then be FATALLY
+  // refused later, when the outbox drains — an async outcome the resolved
+  // promise at the call site can never carry. onDeadLetter is that out-of-band
+  // channel: it fires once per such write so a "Saved" the user already saw is
+  // honestly retracted here. Held at the app root because the originating
+  // component (a question card, the settings form) is likely unmounted by drain
+  // time. Replays unconsumed dead-letters on subscribe, so a refusal that
+  // landed while the app was closed still surfaces on next open.
+  const [deadLetter, setDeadLetter] = useState(null)
+  useEffect(() => {
+    if (!window.mobius || typeof window.mobius.onDeadLetter !== 'function') return undefined
+    return window.mobius.onDeadLetter((dl) => {
+      setDeadLetter(dl && dl.path === 'settings.json'
+        ? 'Your schedule didn’t save — it was refused after going offline. Reopen Settings and save again.'
+        : 'A queued change couldn’t be saved after you reconnected. Please try again.')
+    })
+  }, [])
 
   // Surface the streak in the header on the reports tab. We read it once
   // here (cheap, cached) so the badge is present even before the list
@@ -2441,6 +2456,19 @@ export default function App({ appId, token }) {
       </div>
       <div className="dr-divider" />
       <div className="dr-scroll">
+        {deadLetter && (
+          <div className="dr-deadletter" role="alert">
+            <span>{deadLetter}</span>
+            <button
+              type="button"
+              className="dr-deadletter__x dr-pressable"
+              aria-label="Dismiss"
+              onClick={() => setDeadLetter(null)}
+            >
+              ×
+            </button>
+          </div>
+        )}
         {tab === 'reports' ? (
           <>
             {/* Last-night status row — shows most recent cron_outcome for dreaming */}
@@ -2463,7 +2491,7 @@ export default function App({ appId, token }) {
             )}
           </>
         ) : (
-          <SettingsTab appId={appId} storage={storage} online={online} token={token} />
+          <SettingsTab appId={appId} storage={storage} token={token} />
         )}
       </div>
     </div>
