@@ -356,6 +356,28 @@ export function extractReportQuestions(html) {
   return { html: out, questions }
 }
 
+// Durability check for the answers re-read. window.mobius.storage.set() resolves
+// {synced:true} even for a write the server FATALLY rejected: the runtime
+// dead-letters a poison op and reports {synced} though the server refused it
+// ("no consumer reads this flag" — mobius-runtime.js settle()). A 413 (per-app
+// quota / oversize body), 400/415 (bad path/MIME), or 403 (ownership) reject
+// thus looks "saved." The ONLY honest durability signal under that contract is a
+// RE-READ: the same drain that dead-letters the op also CAS-reconciles the local
+// mirror back to the server's value, so a get() after the set() returns what the
+// server actually holds — NOT the rejected answers. This returns true iff the
+// re-read payload reflects every answer we wrote (and the brief's date), so the
+// card flips to "Saved" only when the next-run agent can actually read them.
+export function answersLanded(stored, expected) {
+  if (!stored || typeof stored !== 'object') return false
+  if (stored.report_date !== expected.report_date) return false
+  const a = stored.answers
+  const e = expected.answers
+  if (!a || typeof a !== 'object' || !e || typeof e !== 'object') return false
+  // Every answer we wrote must be present and equal in the stored copy. Extra
+  // keys server-side are fine; a missing or mismatched one is a non-durable write.
+  return Object.keys(e).every((k) => a[k] === e[k])
+}
+
 // "0 6 * * *" -> "06:00" for the <input type="time"> value.
 function hourToTimeValue(hour) {
   return `${String(hour).padStart(2, '0')}:00`
@@ -1291,10 +1313,11 @@ function MorningChat({ chatId, onPhase }) {
 // imports, no streaming/answeredMap plumbing. Collects an answer per question;
 // on submit it persists { "<question text>": "<chosen label(s)>" } to
 // question-answers/<date>.json for the NEXT run (not a live agent) and flips to
-// "answered" ONLY once that write is durable. It also pre-seeds the answered
-// state from the same record on open, so a reopened brief shows the done state
-// rather than a fresh re-submittable form. Mirrors the News app's
-// ReportQuestions (app-news/index.jsx) so the two apps read the same.
+// "answered" ONLY once a RE-READ confirms the write landed (set() reports
+// {synced} even for a server-rejected write — see answersLanded). It also
+// pre-seeds the answered state from the same record on open, so a reopened
+// brief shows the done state rather than a fresh re-submittable form. Mirrors
+// the News app's ReportQuestions (app-news/index.jsx) so the two apps read the same.
 function ReportQuestions({ questions, storage, dateStr, appId, token }) {
   const [picks, setPicks] = useState({})        // question INDEX -> label | [labels]
   const [answered, setAnswered] = useState(false)
@@ -1368,13 +1391,27 @@ function ReportQuestions({ questions, storage, dateStr, appId, token }) {
     }
     setSaving(true)
     setError('')
+    const path = `question-answers/${dateStr}.json`
     try {
       // Bare object on a .json path -> stored as-is (no envelope). putJSON
-      // resolves only on a SYNCED server write and throws on a queued-offline
-      // or HTTP failure, so awaiting it is the durability gate: answered flips
-      // only once the next-run agent can actually read the answers. Keyed by
-      // the REPORT date so a re-open overwrites rather than piling duplicates.
-      await storage.putJSON(`question-answers/${dateStr}.json`, body)
+      // resolves on a SYNCED server write and throws on a queued-offline write,
+      // but {synced} ALONE is not proof of durability: the runtime dead-letters
+      // a fatally-rejected write (413/400/415/403) yet still reports {synced}
+      // (mobius-runtime.js settle()). Keyed by the REPORT date so a re-open
+      // overwrites rather than piling duplicates.
+      await storage.putJSON(path, body)
+      // RE-READ is the true durability gate. The drain that dead-letters a
+      // rejected op also reconciles the local mirror to the server's value, so
+      // this get() returns what the server actually holds. Only flip to "Saved"
+      // / emit feedback_given once the stored payload reflects the answers we
+      // wrote — otherwise the next-run agent would have nothing to read.
+      const res = await storage.getJSON(path)
+      if (!res || !answersLanded(res.data, body)) {
+        // The write did not land durably (fatal reject dead-lettered, or the
+        // re-read errored/returned stale). Treat exactly like a failed write:
+        // keep the form interactive and surface retry, never claim "Saved".
+        throw new Error('answers did not persist')
+      }
       setAnswered(true)
       emitSignal(appId, token, 'feedback_given', { date: dateStr, signal: 'questions' })
     } catch {
