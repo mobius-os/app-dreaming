@@ -2,10 +2,9 @@
  *
  * Lists the dated reports the reflection agent leaves overnight, tracks a
  * streak, and lets the owner set the run hour and model. Opening a brief
- * shows TWO things stacked: the brief HTML up top (a sandboxed iframe —
- * the agent's static page) and, beneath it, the MORNING CHAT the nightly
- * run opened — the conversation about that brief, live, with a real
- * composer and tappable AskUserQuestion cards. The brief is the read; the
+ * shows the brief HTML in a sandboxed iframe (the agent's static page);
+ * a chat icon in the detail bar opens a slide-up bottom sheet hosting one
+ * app-scoped conversation about Reflection — the read is the brief, the
  * chat is where the partner steers the next night.
  *
  * Data contract (unchanged, load-bearing):
@@ -18,15 +17,15 @@
  *    run for the sole purpose of reporting content height via postMessage.
  *    hardenReportHtml injects a CSP + a minimal height-reporter snippet.
  *
- * Brief↔chat link: the cron creates the morning chat (`POST /api/chats`,
- * title "Morning brief — <date>") and SHOULD write a sibling
- * `reports/<date>.meta.json` = { "chat_id": "<id>" } so the date maps to a
- * chat without guessing. The app reads that meta with its app token; when a
- * chat_id resolves it mounts the real ChatView via `window.mobius.chat({
- * mount, chatId })` (the embed runs in the shell origin with the owner JWT —
- * the only path that can read/post an owner-created chat; the app token alone
- * is 403'd on /api/chats). No chat_id (or no `window.mobius.chat`) → the
- * brief stands alone, gracefully.
+ * Chat link: the chat icon next to the brief title toggles a bottom sheet
+ * (see ChatSheet) that mounts the real ChatView via `window.mobius.chat({
+ * mount, persist: 'chat_id.json' })`. The embed runs in the shell origin
+ * with the owner JWT (the only path that can read/post an owner chat; the
+ * app token alone is 403'd on /api/chats), and the chat is ONE app-scoped,
+ * durable conversation — created once and persisted under chat_id.json — not
+ * tied to any single brief's date. No `window.mobius.chat` (e.g. standalone)
+ * → the chat sheet shows a graceful "open it from your chat list" note and
+ * the brief stands alone.
  */
 import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 
@@ -60,17 +59,6 @@ function cronExitLabel(code) {
   return 'failed (exit ' + n + ')'
 }
 
-// Guarded signal emitter for reflection.
-function emitSignal(appId, token, name, data = {}) {
-  try {
-    const payload = { name, ts: new Date().toISOString(), ...data }
-    fetch(`/api/storage/apps/${appId}/signals.jsonl`, {
-      method: 'POST',
-      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    }).catch(() => {})
-  } catch {}
-}
 const PROVIDER_LABELS = {
   claude: 'Claude Code',
   codex: 'OpenAI Codex',
@@ -840,7 +828,7 @@ button.rf-card { cursor: pointer; }
 /* The chat icon in the detail bar — sits to the right of the report title. */
 .rf-chat-toggle {
   display: inline-flex; align-items: center; justify-content: center;
-  min-width: 38px; min-height: 38px; border-radius: 10px;
+  min-width: 44px; min-height: 44px; border-radius: 10px;
   border: 1px solid var(--border); background: var(--surface);
   color: var(--accent); cursor: pointer; flex-shrink: 0;
 }
@@ -885,7 +873,7 @@ button.rf-card { cursor: pointer; }
 }
 .rf-sheet-title { font-weight: 700; font-size: 14px; }
 .rf-sheet-close {
-  margin-left: auto; min-width: 36px; min-height: 36px;
+  margin-left: auto; min-width: 44px; min-height: 44px;
   border: none; background: transparent; color: var(--muted);
   font-size: 18px; cursor: pointer; border-radius: 8px;
 }
@@ -1167,29 +1155,6 @@ export function makeStorage(appId, token) {
     }
   }
 
-  // Resolve the morning chat for a report date. The cron SHOULD write a
-  // sibling `reports/<date>.meta.json` = { "chat_id": "<id>" } when it opens
-  // the morning chat; this reads it (with the app token, same as every other
-  // read). Returns the chat_id string, or null when there's no meta yet (the
-  // brief then stands alone). A network error is swallowed to null too — the
-  // brief is still readable; the chat just doesn't mount this open.
-  async function getReportChatId(dateStr) {
-    try {
-      // Typed JSON read through the runtime store (offline-capable, SWR) so the
-      // morning chat still resolves from cache when the brief is opened offline.
-      const data = ms && typeof ms.get === 'function'
-        ? await ms.get(`reports/${dateStr}.meta.json`)
-        : await (async () => {
-            const r = await fetch(`${base}/reports/${dateStr}.meta.json`, { headers })
-            return r.ok ? r.json() : null
-          })()
-      const id = data && (data.chat_id ?? data.chatId ?? data.morning_chat)
-      return typeof id === 'string' && id.trim() ? id.trim() : null
-    } catch {
-      return null
-    }
-  }
-
   // Enumerate reports through the runtime's typed listing (offline-capable).
   // storage.list(prefix) pages the server when reachable and ELSE derives the
   // listing from the read-through cache (the paths this app has read) overlaid
@@ -1261,7 +1226,7 @@ export function makeStorage(appId, token) {
     return () => {}
   }
 
-  return { getJSON, putJSON, getReportHtml, getReportChatId, listReportDates, subscribeJSON }
+  return { getJSON, putJSON, getReportHtml, listReportDates, subscribeJSON }
 }
 
 // ---------------------------------------------------------------------------
@@ -1344,9 +1309,29 @@ function ChatSheet({ open, onClose, getContext }) {
   // getContext is read through a ref so its identity changing (it closes over
   // the report date) never re-fires the mount effect and remounts the iframe.
   const getContextRef = useRef(getContext)
+  // a11y refs for the modal sheet. closeRef focuses the close button on open;
+  // restoreRef remembers the element that had focus when the sheet opened (the
+  // chat toggle) so focus returns there on close — a keyboard user never loses
+  // their place. Mirrors ModelPicker's open/Escape/focus idiom.
+  const closeRef = useRef(null)
+  const restoreRef = useRef(null)
 
   useEffect(() => { if (open) setMounted(true) }, [open])
   useEffect(() => { getContextRef.current = getContext }, [getContext])
+
+  // On open: remember the trigger, move focus into the sheet (the close
+  // button), and let Escape close it. On close: return focus to the trigger.
+  useEffect(() => {
+    if (!open) return undefined
+    restoreRef.current = (typeof document !== 'undefined' && document.activeElement) || null
+    const onKey = (e) => { if (e.key === 'Escape') onClose() }
+    document.addEventListener('keydown', onKey)
+    closeRef.current?.focus?.()
+    return () => {
+      document.removeEventListener('keydown', onKey)
+      restoreRef.current?.focus?.()
+    }
+  }, [open, onClose])
 
   useEffect(() => {
     if (!mounted) return undefined
@@ -1390,16 +1375,27 @@ function ChatSheet({ open, onClose, getContext }) {
   if (!mounted) return null
 
   return (
-    <div className={`rf-sheet-scrim${open ? ' is-open' : ''}`} onClick={onClose}>
+    // When CLOSED the sheet stays mounted (only translateY-hidden), so mark it
+    // inert + aria-hidden to pull the offscreen close button and chat iframe
+    // out of the tab order and the AT tree. When OPEN, drop both and add modal
+    // semantics so AT treats it as a real dialog.
+    <div
+      className={`rf-sheet-scrim${open ? ' is-open' : ''}`}
+      onClick={onClose}
+      inert={open ? undefined : true}
+      aria-hidden={open ? undefined : true}
+    >
       <div
         className={`rf-chat-sheet${open ? ' is-open' : ''}`}
         role="dialog"
+        aria-modal={open ? true : undefined}
         aria-label="Chat about your briefs"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="rf-sheet-handle-row">
           <span className="rf-sheet-title">Chat about your briefs</span>
           <button
+            ref={closeRef}
             type="button"
             className="rf-sheet-close rf-pressable"
             aria-label="Close chat"
@@ -1529,7 +1525,7 @@ function ReportQuestions({ questions, storage, dateStr, appId, token }) {
       // gate had to reconstruct, now built into the write itself.
       await storage.putJSON(path, body)
       setAnswered(true)
-      emitSignal(appId, token, 'feedback_given', { date: dateStr, signal: 'questions' })
+      window.mobius?.signal?.('feedback_given', { date: dateStr, signal: 'questions' })
     } catch {
       // A fatal DurableWriteError lands here. Keep the form interactive and
       // surface retry — never claim "Saved" on a write the server refused. (An
@@ -1668,7 +1664,7 @@ function ReportDetail({ dateStr, storage, online, onBack, appId, token }) {
       else if (res.notFound) setState({ phase: 'missing', html: '' })
       else {
         setState({ phase: 'error', html: '' })
-        emitSignal(appId, token, 'error', { message: 'brief load failed for ' + dateStr + ' (HTTP ' + res.error + ')' })
+        window.mobius?.signal?.('error', { message: 'brief load failed for ' + dateStr + ' (HTTP ' + res.error + ')' })
       }
     })()
     return () => { cancelled = true }
@@ -1729,7 +1725,12 @@ function ReportDetail({ dateStr, storage, online, onBack, appId, token }) {
           aria-label="Chat about your briefs"
           aria-pressed={chatOpen}
           title="Chat"
-          onClick={() => setChatOpen((o) => !o)}
+          onClick={() => setChatOpen((o) => {
+            // Engagement signal on the closed→open edge only (once per open),
+            // replacing the signal the removed FeedbackLauncher used to emit.
+            if (!o) window.mobius?.signal?.('feedback_given', { date: dateStr, signal: 'chat' })
+            return !o
+          })}
         >
           <ChatBubbleIcon size={20} />
         </button>
@@ -2446,7 +2447,7 @@ export default function App({ appId, token }) {
       // app_ready fires once after the initial state load (whether empty or not).
       if (!appReadyFiredRef.current) {
         appReadyFiredRef.current = true
-        emitSignal(appId, token, 'app_ready')
+        window.mobius?.signal?.('app_ready')
       }
     })()
     return () => { cancelled = true }
@@ -2470,7 +2471,7 @@ export default function App({ appId, token }) {
       await handle.ready?.catch(() => false)
       if (detailNavRef.current !== handle) return
     }
-    emitSignal(appId, token, 'brief_opened', { date: dateStr })
+    window.mobius?.signal?.('brief_opened', { date: dateStr })
     setOpenDate(dateStr)
   }, [appId, token])
 
