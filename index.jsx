@@ -540,11 +540,11 @@ const CSS = `
 }
 .rf-brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
 .rf-brand-icon {
-  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 6px;
+  flex: 0 0 auto; width: 34px; height: 34px; border-radius: 6px;
   object-fit: cover; display: block;
 }
 .rf-brand-fallback {
-  flex: 0 0 auto; width: 26px; height: 26px; border-radius: 6px;
+  flex: 0 0 auto; width: 34px; height: 34px; border-radius: 6px;
   align-items: center; justify-content: center;
   background: ${ACCENT}; color: var(--bg, #0c0c0c);
   font-weight: 700; line-height: 1;
