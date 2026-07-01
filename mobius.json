@@ -1,8 +1,8 @@
 {
   "id": "reflection",
   "name": "Reflection",
-  "version": "2.4.0",
-  "description": "While you sleep, M\u00f6bius reviews the day's work and leaves a one-page morning brief.",
+  "version": "2.5.0",
+  "description": "While you sleep, Möbius reviews the day's work and leaves a one-page morning brief.",
   "author": "mobius-os",
   "license": "MIT",
   "homepage": "https://github.com/mobius-os/app-reflection",
