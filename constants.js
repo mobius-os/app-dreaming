@@ -222,12 +222,6 @@ export const REPORT_BASE_STYLE = `<style>
   .brief .badge.hold, .brief .badge.review { color: var(--amber, #d29a3a); }
   .brief .badge.risk { color: var(--danger, #e26a63); }
 
-  /* Belt-and-suspenders: extractReportQuestions strips the questions carrier
-     before render, but its section|div regex misses other carrier tags
-     (aside/article/…); hide any that slip through so a stray questions shell
-     never shows in the brief. */
-  [data-report-questions] { display: none; }
-
   /* /mobius-ui:BriefStyle */
 </style>`
 

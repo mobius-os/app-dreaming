@@ -177,7 +177,12 @@ export function extractReportQuestions(html) {
   // second carrier can't survive.
   let out = html
   out = out.replace(/<script\b[^>]*type\s*=\s*["']application\/mobius-questions\+json["'][^>]*>[\s\S]*?<\/script>/gi, '')
-  out = out.replace(/<(section|div)\b[^>]*\bdata-report-questions\b[^>]*>[\s\S]*?<\/\1>/gi, '')
+  // Strip the carrier by its data-report-questions attribute on ANY element,
+  // not just section/div: the shell is conventionally a <section>, but a
+  // carrier on aside/article/etc. must not survive into srcDoc as a stray
+  // questions heading. `\1` back-refs the opening tag so the matching close is
+  // removed with it.
+  out = out.replace(/<([a-z][\w-]*)\b[^>]*\bdata-report-questions\b[^>]*>[\s\S]*?<\/\1>/gi, '')
   return { html: out, questions }
 }
 

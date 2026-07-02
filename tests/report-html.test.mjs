@@ -198,6 +198,23 @@ test('a malformed carrier yields no cards and leaves the brief intact', async ()
   assert.match(html, /Morning/)
 })
 
+test('strips a carrier on a non-section/div tag (aside/article)', async () => {
+  const { extractReportQuestions } = await bundle()
+  const html0 = '<!doctype html><body><main><h1>Morning</h1></main>'
+    + '<aside class="report-questions" data-report-questions>'
+    + '<h2>One more thing</h2>'
+    + '<script type="application/mobius-questions+json">'
+    + '{"questions":[{"question":"Q?","options":[{"label":"A"}]}]}</script>'
+    + '</aside></body>'
+  const { html, questions } = extractReportQuestions(html0)
+
+  assert.equal(questions.length, 1)
+  // The aside carrier and its visible heading are gone; the brief survives.
+  assert.doesNotMatch(html, /data-report-questions/i)
+  assert.doesNotMatch(html, /One more thing/)
+  assert.match(html, /Morning/)
+})
+
 test('an absent carrier returns no questions and the HTML unchanged', async () => {
   const { extractReportQuestions } = await bundle()
   const plain = '<!doctype html><body><main><h1>Just a brief</h1></main></body>'
